@@ -1,0 +1,1009 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>のりあわせ調整</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<style>
+  :root{
+    --ink:#132A1E;
+    --paper:#F6F5EF;
+    --card:#FFFFFF;
+    --line:#DAD6C8;
+    --pine:#1F4C39;
+    --pine-deep:#153627;
+    --amber:#E08A2C;
+    --amber-deep:#B96B14;
+    --danger:#B3413A;
+    --danger-bg:#FBECEA;
+    --muted:#6B7268;
+    --radius:12px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:"Hiragino Sans","Yu Gothic",sans-serif;
+    background:var(--paper);
+    color:var(--ink);
+    padding-bottom:80px;
+  }
+  header.app-header{
+    background:var(--pine);
+    color:#fff;
+    padding:18px 20px 16px;
+    position:sticky;
+    top:0;
+    z-index:10;
+  }
+  header.app-header .brand{
+    font-size:13px;
+    letter-spacing:.08em;
+    opacity:.75;
+    margin:0 0 2px;
+  }
+  header.app-header h1{
+    margin:0;
+    font-size:20px;
+    font-weight:700;
+  }
+  main{
+    max-width:560px;
+    margin:0 auto;
+    padding:16px;
+  }
+  nav.tabs{
+    display:flex;
+    gap:6px;
+    max-width:560px;
+    margin:0 auto;
+    padding:10px 16px 0;
+    background:var(--pine-deep);
+  }
+  nav.tabs button{
+    flex:1;
+    border:none;
+    background:transparent;
+    color:rgba(255,255,255,.7);
+    padding:10px 4px;
+    border-radius:9px 9px 0 0;
+    font-size:13px;
+    font-weight:700;
+    cursor:pointer;
+  }
+  nav.tabs button.active{
+    background:var(--card);
+    color:var(--pine-deep);
+  }
+  .card{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:16px;
+    margin-bottom:14px;
+  }
+  .card h2{
+    font-size:15px;
+    margin:0 0 12px;
+    font-weight:700;
+    color:var(--pine-deep);
+  }
+  label.field-label{
+    display:block;
+    font-size:12.5px;
+    color:var(--muted);
+    margin:10px 0 4px;
+  }
+  input[type=text],input[type=date],input[type=number],select{
+    width:100%;
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:9px 10px;
+    font-size:14px;
+    background:#fff;
+    color:var(--ink);
+  }
+  .btn{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:6px;
+    border:1px solid var(--pine);
+    background:var(--pine);
+    color:#fff;
+    padding:9px 16px;
+    border-radius:8px;
+    font-size:13.5px;
+    font-weight:700;
+    cursor:pointer;
+  }
+  .btn.secondary{
+    background:#fff;
+    color:var(--pine-deep);
+    border:1px solid var(--line);
+  }
+  .btn.amber{
+    background:var(--amber);
+    border-color:var(--amber-deep);
+  }
+  .btn.ghost{
+    background:transparent;
+    border:1px dashed var(--line);
+    color:var(--muted);
+  }
+  .btn.small{
+    padding:5px 10px;
+    font-size:12px;
+  }
+  .btn:disabled{
+    opacity:.45;
+    cursor:not-allowed;
+  }
+  .row{display:flex;gap:8px;align-items:center;}
+  .member-row{
+    display:flex;
+    gap:8px;
+    align-items:center;
+    margin-bottom:6px;
+  }
+  .member-row input{flex:1;}
+  .pill{
+    display:inline-block;
+    font-size:11px;
+    padding:2px 8px;
+    border-radius:20px;
+    background:#EEEDE3;
+    color:var(--muted);
+    margin-left:6px;
+  }
+  .household-card{
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:10px 12px;
+    margin-bottom:8px;
+    background:#FCFBF7;
+  }
+  .household-card .addr{
+    font-size:12px;
+    color:var(--muted);
+    margin-bottom:4px;
+  }
+  .household-card .members{
+    font-size:14px;
+    font-weight:600;
+  }
+  .event-card{
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:12px 14px;
+    margin-bottom:10px;
+    cursor:pointer;
+    background:#fff;
+  }
+  .event-card:hover{border-color:var(--pine);}
+  .event-card .date{font-size:12px;color:var(--muted);}
+  .event-card .dest{font-weight:700;font-size:15px;margin:2px 0;}
+  .response-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:9px 0;
+    border-top:1px solid var(--line);
+    font-size:14px;
+  }
+  .response-row:first-child{border-top:none;}
+  .response-row .name{font-weight:600;}
+  .response-row .sub{font-size:11.5px;color:var(--muted);}
+  .toggle-group{display:flex;gap:6px;}
+  .toggle-btn{
+    border:1px solid var(--line);
+    background:#fff;
+    padding:5px 10px;
+    border-radius:7px;
+    font-size:12px;
+    cursor:pointer;
+    color:var(--muted);
+  }
+  .toggle-btn.on{
+    background:var(--pine);
+    color:#fff;
+    border-color:var(--pine);
+  }
+  .toggle-btn.on.amber{background:var(--amber);border-color:var(--amber-deep);color:#fff;}
+  .cap-input{width:52px;padding:5px 4px;text-align:center;}
+  .warn-box{
+    background:var(--danger-bg);
+    color:var(--danger);
+    border-radius:10px;
+    padding:10px 12px;
+    font-size:13px;
+    margin-bottom:10px;
+  }
+  .info-box{
+    background:#EAF1EC;
+    color:var(--pine-deep);
+    border-radius:10px;
+    padding:10px 12px;
+    font-size:13px;
+    margin-bottom:10px;
+  }
+  .car-card{
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:12px 14px;
+    margin-bottom:10px;
+    background:#fff;
+  }
+  .car-card .car-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:8px;
+  }
+  .car-card .car-head .name{font-weight:700;font-size:14.5px;}
+  .car-card .cap{font-size:12px;color:var(--muted);}
+  .occupant{
+    font-size:13.5px;
+    padding:5px 0;
+    border-top:1px solid var(--line);
+    display:flex;
+    justify-content:space-between;
+  }
+  .occupant:first-child{border-top:none;}
+  .tag{
+    font-size:10.5px;
+    background:#EEEDE3;
+    color:var(--muted);
+    padding:1px 7px;
+    border-radius:20px;
+  }
+  .merge-card{
+    border:1px solid var(--amber-deep);
+    background:#FDF3E6;
+    border-radius:10px;
+    padding:10px 12px;
+    margin-bottom:8px;
+    font-size:13.5px;
+  }
+  .empty-state{
+    text-align:center;
+    padding:30px 10px;
+    color:var(--muted);
+    font-size:13.5px;
+  }
+  .section-title{
+    font-size:12px;
+    letter-spacing:.05em;
+    color:var(--muted);
+    margin:18px 0 8px;
+    font-weight:700;
+  }
+  .helper{font-size:12px;color:var(--muted);margin-top:4px;}
+</style>
+</head>
+<body>
+
+<header class="app-header">
+  <p class="brand">CARPOOL COORDINATOR</p>
+  <h1>のりあわせ調整</h1>
+</header>
+<nav class="tabs" id="tabs"></nav>
+<main id="main"></main>
+
+<script>
+/* ---------------- Firebase setup ----------------
+   ここに、Firebaseコンソールで取得した「firebaseConfig」の中身を
+   そのまま貼り付けてください。手順は会話の説明を参照してください。
+------------------------------------------------- */
+const firebaseConfig = {
+  apiKey: "AIzaSyCati_uTaBbVvz9FULfnqV4xkkWmjDRfW0",
+  authDomain: "carpool-app-3b32e.firebaseapp.com",
+  databaseURL: "https://carpool-app-3b32e-default-rtdb.firebaseio.com",
+  projectId: "carpool-app-3b32e",
+};
+
+let db = null;
+let stateRef = null;
+try{
+  firebase.initializeApp(firebaseConfig);
+  db = firebase.database();
+  stateRef = db.ref("carpool_app_state_v1");
+}catch(e){
+  console.error("Firebaseの初期化に失敗しました。firebaseConfigの内容を確認してください。", e);
+}
+
+/* ---------------- storage helpers ---------------- */
+function emptyState(){
+  return { households: [], events: [] };
+}
+
+async function loadState(){
+  try{
+    if(!stateRef) return emptyState();
+    const snap = await stateRef.get();
+    if(snap.exists()) return snap.val();
+    return emptyState();
+  }catch(e){
+    console.error("読み込みに失敗しました", e);
+    return emptyState();
+  }
+}
+
+async function saveState(){
+  try{
+    if(!stateRef) return;
+    await stateRef.set(state);
+  }catch(e){
+    console.error("保存に失敗しました", e);
+  }
+}
+
+let state = emptyState();
+let view = "events"; // households | events | eventDetail
+let currentEventId = null;
+let editingHouseholdId = null;
+let editingEventId = null;
+
+/* ---------------- geocoding (GSI, free, no key) ---------------- */
+async function geocode(address){
+  try{
+    const url = "https://msearch.gsi.go.jp/address-search/AddressSearch?q=" + encodeURIComponent(address);
+    const controller = new AbortController();
+    const timeout = setTimeout(()=>controller.abort(), 2500);
+    const r = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
+    const data = await r.json();
+    if(data && data[0] && data[0].geometry && data[0].geometry.coordinates){
+      const [lng,lat] = data[0].geometry.coordinates;
+      return { lat, lng, method:"gsi" };
+    }
+  }catch(e){
+    /* network blocked, timed out, or unreachable in this preview environment — fall back below */
+  }
+  return { lat:null, lng:null, method:"text" };
+}
+
+function haversine(lat1,lng1,lat2,lng2){
+  const R=6371;
+  const dLat=(lat2-lat1)*Math.PI/180;
+  const dLng=(lng2-lng1)*Math.PI/180;
+  const a=Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+// fallback: common-prefix based pseudo-distance when lat/lng unavailable
+function textDistance(a,b){
+  let i=0;
+  while(i<a.length && i<b.length && a[i]===b[i]) i++;
+  return Math.max(0, 40 - i); // longer common prefix => smaller "distance"
+}
+
+function distanceBetween(h1,h2){
+  if(h1.lat!=null && h2.lat!=null){
+    return haversine(h1.lat,h1.lng,h2.lat,h2.lng);
+  }
+  return textDistance(h1.address||"", h2.address||"");
+}
+
+/* ---------------- ids ---------------- */
+function uid(){ return Math.random().toString(36).slice(2,10); }
+
+/* ---------------- sample data (for testing) ---------------- */
+const SAMPLE_HOUSEHOLDS = [
+  { address:"さいたま市大宮区北袋町1-2-3", names:["佐藤 一郎","佐藤 花子","佐藤 次郎"] },
+  { address:"さいたま市大宮区北袋町4-5-1", names:["田中 太郎"] },
+  { address:"さいたま市大宮区北袋町2-8-9", names:["中村 洋子"] },
+  { address:"さいたま市大宮区寿能町2-10-5", names:["鈴木 実","鈴木 舞"] },
+  { address:"さいたま市大宮区寿能町3-1-2", names:["山本 拓也"] },
+  { address:"さいたま市浦和区高砂1-1-1", names:["高橋 健二","高橋 美咲","高橋 蓮","高橋 陽菜"] },
+  { address:"さいたま市浦和区高砂2-3-4", names:["伊藤 直樹"] },
+  { address:"さいたま市中央区新都心3-2-1", names:["小林 亮"] },
+  { address:"東京都板橋区成増1-2-3", names:["渡辺 誠"] },
+  { address:"東京都練馬区石神井町4-4-4", names:["加藤 大輔","加藤 沙織"] },
+];
+
+async function loadSampleData(){
+  const additions = SAMPLE_HOUSEHOLDS.map(h=>({
+    id: uid(),
+    address: h.address,
+    lat: null,
+    lng: null,
+    members: h.names.map(n=>({id:uid(), name:n}))
+  }));
+  state.households.push(...additions);
+  await saveState();
+}
+
+/* ---------------- rendering shell ---------------- */
+function renderTabs(){
+  const tabs = document.getElementById("tabs");
+  const items = [
+    {id:"households", label:"世帯登録"},
+    {id:"events", label:"イベント"},
+  ];
+  tabs.innerHTML = items.map(t=>`<button class="${view.startsWith(t.id)?'active':''}" data-tab="${t.id}">${t.label}</button>`).join("");
+  tabs.querySelectorAll("button").forEach(b=>{
+    b.onclick = ()=>{ view=b.dataset.tab; currentEventId=null; editingHouseholdId=null; editingEventId=null; render(); };
+  });
+}
+
+function render(){
+  renderTabs();
+  const main = document.getElementById("main");
+  if(view==="households") main.innerHTML = renderHouseholds();
+  else if(view==="events") main.innerHTML = renderEventsList();
+  else if(view==="eventDetail") main.innerHTML = renderEventDetail();
+  bindEvents();
+}
+
+/* ================= HOUSEHOLDS ================= */
+function renderHouseholds(){
+  const editing = editingHouseholdId ? state.households.find(h=>h.id===editingHouseholdId) : null;
+
+  const list = state.households.map(h=>`
+    <div class="household-card">
+      <div class="addr">${escapeHtml(h.address)} ${h.lat!=null?'<span class="pill">位置情報あり</span>':'<span class="pill">簡易判定</span>'}</div>
+      <div class="members">${h.members.map(m=>escapeHtml(m.name)).join("・")}</div>
+      <div style="margin-top:8px; display:flex; gap:8px;">
+        <button class="btn secondary small" data-edit-household="${h.id}">編集</button>
+        <button class="btn ghost small" data-del-household="${h.id}">削除</button>
+      </div>
+    </div>
+  `).join("") || `<div class="empty-state">まだ世帯が登録されていません。<br>下のフォームから登録してください。</div>`;
+
+  const memberInputsHtml = (editing ? editing.members.map(m=>m.name) : [""]).map(name=>
+    `<div class="member-row"><input type="text" placeholder="名前(例:佐藤 花子)" value="${escapeHtml(name)}"></div>`
+  ).join("");
+
+  return `
+    <div class="card">
+      <h2>${editing? "世帯を編集する":"世帯を登録する"}</h2>
+      <label class="field-label">住所</label>
+      <input type="text" id="new-address" placeholder="例:さいたま市大宮区北袋町1-2-3" value="${editing?escapeHtml(editing.address):""}">
+      <div class="helper">住所は世帯ごとに1回だけ入力すればOKです。</div>
+
+      <div class="section-title">同じ住所に住むメンバー</div>
+      <div id="member-inputs">
+        ${memberInputsHtml}
+      </div>
+      <button class="btn secondary small" id="add-member-input" style="margin-top:4px;">＋ メンバーを追加</button>
+
+      <div style="margin-top:14px; display:flex; gap:8px;">
+        <button class="btn amber" id="save-household">${editing? "更新する":"世帯を登録"}</button>
+        ${editing?'<button class="btn ghost" id="cancel-household-edit">キャンセル</button>':""}
+      </div>
+    </div>
+
+    <div class="section-title">登録済みの世帯(${state.households.length})</div>
+    ${list}
+
+    <div style="margin-top:16px;">
+      <button class="btn ghost small" id="load-sample-data">テスト用のサンプル世帯(10件)を読み込む</button>
+    </div>
+
+    <div class="info-box" style="margin-top:16px;">世帯の登録が終わったら、画面上部の「イベント」タブから、集まりの作成・参加者の回答・車の割り振りができます。</div>
+  `;
+}
+
+/* ================= EVENTS LIST ================= */
+function renderEventsList(){
+  const editing = editingEventId ? getEvent(editingEventId) : null;
+
+  const list = state.events.slice().sort((a,b)=> a.date < b.date ? -1:1).map(ev=>`
+    <div class="event-card" data-open-event="${ev.id}">
+      <div class="date">${ev.date || "日付未定"}</div>
+      <div class="dest">${escapeHtml(ev.destination)}</div>
+      <div class="helper">駐車場 上限 ${ev.parkingLimit}台・回答期限 ${ev.deadline || "未設定"}</div>
+      <div style="margin-top:8px; display:flex; gap:8px;" onclick="event.stopPropagation()">
+        <button class="btn secondary small" data-edit-event="${ev.id}">編集</button>
+        <button class="btn ghost small" data-del-event="${ev.id}">削除</button>
+      </div>
+    </div>
+  `).join("") || `<div class="empty-state">まだイベントがありません。下から作成してください。</div>`;
+
+  return `
+    <div class="card">
+      <h2>${editing? "イベントを編集する":"イベントを作成する"}</h2>
+      <label class="field-label">日付</label>
+      <input type="date" id="ev-date" value="${editing?editing.date:""}">
+      <label class="field-label">行き先</label>
+      <input type="text" id="ev-dest" placeholder="例:〇〇市 練習試合会場" value="${editing?escapeHtml(editing.destination):""}">
+      <label class="field-label">駐車場の上限台数</label>
+      <input type="number" id="ev-limit" min="1" value="${editing?editing.parkingLimit:3}">
+      <label class="field-label">回答期限(この日を過ぎると回答できなくなります)</label>
+      <input type="date" id="ev-deadline" value="${editing?(editing.deadline||""):""}">
+      <label class="field-label">現地の集合時間</label>
+      <input type="time" id="ev-meettime" value="${editing?(editing.meetTime||""):""}">
+      <label class="field-label">連絡欄(自由記入)</label>
+      <textarea id="ev-notes" rows="3" placeholder="例:雨天の場合は中止、体育館入口に集合など" style="width:100%; border:1px solid var(--line); border-radius:8px; padding:9px 10px; font-size:14px; font-family:inherit;">${editing?escapeHtml(editing.notes||""):""}</textarea>
+      <div style="margin-top:14px; display:flex; gap:8px;">
+        <button class="btn amber" id="create-event">${editing?"更新する":"イベントを作成"}</button>
+        ${editing?'<button class="btn ghost" id="cancel-event-edit">キャンセル</button>':""}
+      </div>
+    </div>
+    <div class="section-title">イベント一覧</div>
+    ${list}
+  `;
+}
+
+/* ================= EVENT DETAIL ================= */
+function getEvent(id){ return state.events.find(e=>e.id===id); }
+
+function renderEventDetail(){
+  const ev = getEvent(currentEventId);
+  if(!ev) return `<div class="empty-state">イベントが見つかりません。</div>`;
+
+  ev.responses = ev.responses || {};       // memberId -> { attending }
+  ev.driverResponses = ev.driverResponses || {}; // householdId -> { canDrive, capacity, fixed, driverName }
+
+  state.households.forEach(h=>{
+    h.members.forEach(m=>{
+      if(!ev.responses[m.id]) ev.responses[m.id] = { attending:false };
+    });
+    if(!ev.driverResponses[h.id]) ev.driverResponses[h.id] = { canDrive:false, capacity:3, fixed:false, driverName:"" };
+  });
+
+  const today = new Date().toISOString().slice(0,10);
+  const pastDeadline = !!(ev.deadline && today > ev.deadline);
+  const dis = pastDeadline ? "disabled" : "";
+
+  const householdBlocks = state.households.map(h=>{
+    const dr = ev.driverResponses[h.id];
+    const searchText = (h.address+" "+h.members.map(m=>m.name).join(" ")).toLowerCase();
+    const memberRows = h.members.map(m=>{
+      const r = ev.responses[m.id];
+      return `
+      <div class="response-row">
+        <div class="name">${escapeHtml(m.name)}</div>
+        <button class="toggle-btn ${r.attending?'on':''}" data-resp="${m.id}" ${dis}>参加</button>
+      </div>`;
+    }).join("");
+
+    return `
+    <div class="household-card" style="background:#fff;" data-search="${escapeHtml(searchText)}">
+      <div class="addr">${escapeHtml(h.address)}</div>
+      ${memberRows}
+      <div style="border-top:1px solid var(--line); margin-top:8px; padding-top:8px;">
+        <div class="row" style="flex-wrap:wrap; gap:6px;">
+          <button class="toggle-btn ${dr.canDrive?'on':''}" data-driver-toggle="${h.id}" data-field="canDrive" ${dis}>この世帯から車を出す</button>
+          ${dr.canDrive?`
+            <span class="sub">残り</span><input type="number" class="cap-input" min="0" value="${dr.capacity}" data-driver-cap="${h.id}" ${dis}><span class="sub">人</span>
+            <button class="toggle-btn ${dr.fixed?'on amber':''}" data-driver-toggle="${h.id}" data-field="fixed" title="必ず車を出す" ${dis}>車出し必須</button>
+          `:""}
+        </div>
+        ${dr.canDrive?`
+          <label class="field-label" style="margin-top:8px;">運転者のお名前(任意)</label>
+          <input type="text" placeholder="例:佐藤さん" value="${escapeHtml(dr.driverName)}" data-driver-name="${h.id}" ${dis}>
+        `:""}
+      </div>
+    </div>`;
+  }).join("");
+
+  const allocationHtml = renderAllocationSection(ev);
+
+  return `
+    <button class="btn ghost small" id="back-to-events" style="margin-bottom:10px;">← イベント一覧に戻る</button>
+    <button class="btn amber" id="jump-to-result" style="position:fixed; bottom:20px; right:20px; left:20px; max-width:520px; margin:0 auto; z-index:50; box-shadow:0 4px 14px rgba(0,0,0,.18);">乗り合わせ結果を見る ↓</button>
+    <div class="card">
+      <h2>${escapeHtml(ev.destination)}</h2>
+      <div class="helper">${ev.date || "日付未定"}・駐車場上限 ${ev.parkingLimit}台・回答期限 ${ev.deadline || "未設定"}</div>
+      ${ev.meetTime?`<div class="helper" style="margin-top:4px;">現地集合時間 ${escapeHtml(ev.meetTime)}</div>`:""}
+      ${ev.notes?`<div class="info-box" style="margin-top:10px; white-space:pre-wrap;">${escapeHtml(ev.notes)}</div>`:""}
+    </div>
+
+    ${pastDeadline?`<div class="warn-box">回答期限(${ev.deadline})を過ぎたため、回答は締め切られました。日程を変更する場合はイベントの編集から期限を延ばしてください。</div>`:""}
+
+    <div class="card">
+      <h2>参加者の回答</h2>
+      <div class="helper" style="margin-bottom:10px;">お子さんごとに「参加」を選んでください。車を出せる世帯は、そのご家庭のお子さん以外に、あと何人乗せられるかを入力してください(運転者ご自身の入力は不要です)。</div>
+      <input type="text" id="member-search" placeholder="名前や住所で検索(自分の世帯を探す)" style="margin-bottom:12px;">
+      <div id="household-list">
+        ${householdBlocks || '<div class="empty-state">先に世帯登録タブでメンバーを登録してください。</div>'}
+      </div>
+      <div class="helper" id="search-empty" style="display:none;">一致する世帯が見つかりません。</div>
+    </div>
+
+    <div id="allocation-section">
+      ${allocationHtml}
+    </div>
+  `;
+}
+
+function driverLabel(h, dr){
+  if(dr.driverName && dr.driverName.trim()) return dr.driverName.trim()+"さんの車";
+  const surname = (h.members[0]?.name||"").split(/[\s　]+/)[0];
+  return (surname? surname+"保護者":"世帯") + "の車";
+}
+
+function renderAllocationSection(ev){
+  ev.confirmedMerges = ev.confirmedMerges || []; // array of [intoHouseholdId, fromHouseholdId]
+
+  const attendingByHousehold = {};
+  state.households.forEach(h=>{
+    attendingByHousehold[h.id] = h.members.filter(m=> ev.responses[m.id] && ev.responses[m.id].attending);
+  });
+
+  const driverCandidates = state.households.filter(h=> ev.driverResponses[h.id] && ev.driverResponses[h.id].canDrive);
+  const flexDrivers = driverCandidates.filter(h=> !ev.driverResponses[h.id].fixed);
+
+  const limit = ev.parkingLimit;
+  const totalCandidates = driverCandidates.length;
+
+  if(driverCandidates.length===0){
+    return `<div class="card"><h2>割り振り</h2><div class="empty-state">車を出せる世帯がまだ登録されていません。</div></div>`;
+  }
+
+  // Step 1: too many candidate drivers -> suggest merges among flexible (非必須) households
+  const mergedAway = new Set(ev.confirmedMerges.map(p=>p[1]));
+  const stillNeeded = totalCandidates - mergedAway.size - limit;
+
+  if(stillNeeded > 0){
+    const availableFlex = flexDrivers.filter(h=> !mergedAway.has(h.id));
+    const pairs = [];
+    for(let i=0;i<availableFlex.length;i++){
+      for(let j=i+1;j<availableFlex.length;j++){
+        const a=availableFlex[i], b=availableFlex[j];
+        pairs.push({a,b,dist:distanceBetween(a,b)});
+      }
+    }
+    pairs.sort((x,y)=>x.dist-y.dist);
+    const used = new Set();
+    const suggestions = [];
+    for(const p of pairs){
+      if(suggestions.length>=stillNeeded) break;
+      if(!used.has(p.a.id) && !used.has(p.b.id)){
+        suggestions.push(p);
+        used.add(p.a.id); used.add(p.b.id);
+      }
+    }
+
+    const nameA = h=> driverLabel(h, ev.driverResponses[h.id]).replace("の車","").replace("さんの車","さん");
+    return `<div class="card"><h2>駐車場の上限を超えています</h2>
+      <div class="warn-box">車を出せる世帯が ${totalCandidates - mergedAway.size}件 いますが、駐車場の上限は ${limit}台 です。あと ${stillNeeded}組 まとめる必要があります。</div>
+      ${suggestions.map(s=>`
+        <div class="merge-card">
+          <b>${escapeHtml(nameA(s.a))}</b> と <b>${escapeHtml(nameA(s.b))}</b> は住所が近いので、どちらか1台にまとめられそうです。
+          <div style="margin-top:8px;">
+            <button class="btn small amber" data-merge-into="${s.a.id}" data-merge-from="${s.b.id}">${escapeHtml(nameA(s.b))}を${escapeHtml(nameA(s.a))}の車に統合</button>
+            <button class="btn small ghost" data-merge-into="${s.b.id}" data-merge-from="${s.a.id}">${escapeHtml(nameA(s.a))}を${escapeHtml(nameA(s.b))}の車に統合</button>
+          </div>
+        </div>
+      `).join("")}
+      ${suggestions.length===0?'<div class="helper">これ以上、住所が近いペアが見つかりません。手動で調整してください。</div>':''}
+    </div>`;
+  }
+
+  // Step 2: build final cars
+  const finalDriverHouseholds = driverCandidates.filter(h=> !mergedAway.has(h.id));
+  const cars = finalDriverHouseholds.map(h=>{
+    const dr = ev.driverResponses[h.id];
+    const openSeats = Number(dr.capacity)||0;
+    const ownChildren = attendingByHousehold[h.id]||[];
+    return {
+      householdId: h.id,
+      label: driverLabel(h, dr),
+      address: h.address, lat:h.lat, lng:h.lng,
+      fixed: dr.fixed,
+      capacityRemaining: openSeats,
+      occupants: [
+        {name: dr.driverName.trim()||"運転者", role:"driver"},
+        ...ownChildren.map(c=>({name:c.name, role:"own"})),
+      ],
+    };
+  });
+
+  const carByHousehold = {};
+  cars.forEach(c=> carByHousehold[c.householdId] = c);
+
+  const mergeWarnings = [];
+  ev.confirmedMerges.forEach(([intoId, fromId])=>{
+    const targetCar = carByHousehold[intoId];
+    const fromChildren = attendingByHousehold[fromId]||[];
+    if(!targetCar || fromChildren.length===0) return;
+    fromChildren.forEach(c=> targetCar.occupants.push({name:c.name, role:"merged", tag:"統合元の世帯"}));
+    targetCar.capacityRemaining -= fromChildren.length;
+    if(targetCar.capacityRemaining < 0){
+      mergeWarnings.push(targetCar.label);
+      targetCar.capacityRemaining = 0;
+    }
+  });
+
+  // remaining passengers = households that are neither driving nor merged-away
+  const placedHouseholdIds = new Set([...finalDriverHouseholds.map(h=>h.id), ...mergedAway]);
+  const passengerUnits = state.households
+    .filter(h=> !placedHouseholdIds.has(h.id))
+    .map(h=> ({ householdId:h.id, address:h.address, lat:h.lat, lng:h.lng, members: attendingByHousehold[h.id]||[] }))
+    .filter(u=> u.members.length>0)
+    .sort((a,b)=> b.members.length - a.members.length);
+
+  const totalRemaining = cars.reduce((s,c)=>s+c.capacityRemaining,0);
+  const totalPassengers = passengerUnits.reduce((s,u)=>s+u.members.length,0);
+
+  let html = "";
+  mergeWarnings.forEach(label=>{
+    html += `<div class="warn-box">${escapeHtml(label)}は統合された世帯の人数まで座席が足りていません。回答内容を確認してください。</div>`;
+  });
+
+  if(totalPassengers > totalRemaining){
+    const shortSeats = totalPassengers - totalRemaining;
+    return html + `<div class="card"><h2>割り振り</h2>
+      <div class="warn-box">乗客の人数が車の残り座席数を超えています。あと ${shortSeats}人分の座席(もう1台分の車)が必要です。車が揃ってから割り振りを実行してください。</div>
+    </div>`;
+  }
+
+  const splitWarnings = [];
+  passengerUnits.forEach(unit=>{
+    const fitting = cars.filter(c=>c.capacityRemaining >= unit.members.length)
+      .sort((a,b)=> distanceBetween(unit,a) - distanceBetween(unit,b));
+    if(fitting.length){
+      const car = fitting[0];
+      unit.members.forEach(m=> car.occupants.push({name:m.name, role:"passenger", tag: unit.members.length>1? "同じ世帯":null}));
+      car.capacityRemaining -= unit.members.length;
+    } else {
+      const remaining = [...unit.members];
+      const sortedCars = cars.slice().sort((a,b)=> distanceBetween(unit,a)-distanceBetween(unit,b));
+      for(const car of sortedCars){
+        while(remaining.length && car.capacityRemaining>0){
+          const m = remaining.shift();
+          car.occupants.push({name:m.name, role:"passenger", tag: unit.members.length>1?"同じ世帯":null});
+          car.capacityRemaining--;
+        }
+        if(!remaining.length) break;
+      }
+      if(unit.members.length>1) splitWarnings.push(unit);
+    }
+  });
+
+  html += `<div class="card"><h2>割り振り結果</h2>`;
+  splitWarnings.forEach(u=>{
+    html += `<div class="warn-box">${escapeHtml(u.address)}の世帯が定員の都合で複数の車に分かれました。</div>`;
+  });
+  html += cars.map(c=>`
+    <div class="car-card">
+      <div class="car-head">
+        <div class="name">${escapeHtml(c.label)} ${c.fixed?'<span class="tag">車出し必須</span>':''}</div>
+        <div class="cap">${c.occupants.length}人</div>
+      </div>
+      ${c.occupants.map(o=>`<div class="occupant"><span>${escapeHtml(o.name)}${o.role==='driver'?'(運転)':''}</span>${o.tag?`<span class="tag">${o.tag}</span>`:''}</div>`).join("")}
+    </div>
+  `).join("");
+  html += `</div>`;
+  html += `<div class="info-box">各自連絡を取り合って集合場所、出発時間を決定して下さい。</div>`;
+
+  return html;
+}
+
+/* ---------------- events / handlers ---------------- */
+function bindEvents(){
+  // households view
+  const addMemberBtn = document.getElementById("add-member-input");
+  if(addMemberBtn){
+    addMemberBtn.onclick = ()=>{
+      const wrap = document.getElementById("member-inputs");
+      const row = document.createElement("div");
+      row.className = "member-row";
+      row.innerHTML = `<input type="text" placeholder="名前">`;
+      wrap.appendChild(row);
+    };
+  }
+  const saveHouseholdBtn = document.getElementById("save-household");
+  if(saveHouseholdBtn){
+    saveHouseholdBtn.onclick = async ()=>{
+      const address = document.getElementById("new-address").value.trim();
+      const nameInputs = Array.from(document.querySelectorAll("#member-inputs input"));
+      const names = nameInputs.map(i=>i.value.trim()).filter(Boolean);
+      if(!address || names.length===0){
+        alert("住所と、少なくとも1人の名前を入力してください。");
+        return;
+      }
+      const editing = editingHouseholdId ? state.households.find(h=>h.id===editingHouseholdId) : null;
+      saveHouseholdBtn.disabled = true;
+      saveHouseholdBtn.textContent = (editing && editing.address===address) ? "更新中..." : "位置情報を取得中...";
+      try{
+        let lat = editing?editing.lat:null, lng = editing?editing.lng:null;
+        if(!editing || editing.address !== address){
+          const geo = await geocode(address);
+          lat = geo.lat; lng = geo.lng;
+        }
+        if(editing){
+          const usedOld = new Set();
+          const newMembers = names.map(n=>{
+            const match = editing.members.find(m=> m.name===n && !usedOld.has(m.id));
+            if(match){ usedOld.add(match.id); return {id:match.id, name:n}; }
+            return {id:uid(), name:n};
+          });
+          editing.address = address;
+          editing.lat = lat;
+          editing.lng = lng;
+          editing.members = newMembers;
+        }else{
+          state.households.push({ id: uid(), address, lat, lng, members: names.map(n=>({id:uid(), name:n})) });
+        }
+        editingHouseholdId = null;
+        await saveState();
+      }finally{
+        render();
+      }
+    };
+  }
+  const cancelHouseholdEdit = document.getElementById("cancel-household-edit");
+  if(cancelHouseholdEdit){
+    cancelHouseholdEdit.onclick = ()=>{ editingHouseholdId = null; render(); };
+  }
+  document.querySelectorAll("[data-edit-household]").forEach(b=>{
+    b.onclick = ()=>{
+      editingHouseholdId = b.dataset.editHousehold;
+      render();
+      window.scrollTo({top:0, behavior:"smooth"});
+    };
+  });
+  document.querySelectorAll("[data-del-household]").forEach(b=>{
+    b.onclick = async ()=>{
+      const id = b.dataset.delHousehold;
+      if(!confirm("この世帯を削除しますか？")) return;
+      state.households = state.households.filter(h=>h.id!==id);
+      await saveState();
+      render();
+    };
+  });
+  const loadSampleBtn = document.getElementById("load-sample-data");
+  if(loadSampleBtn){
+    loadSampleBtn.onclick = async ()=>{
+      if(!confirm("テスト用のサンプル世帯を10件追加します。よろしいですか？")) return;
+      loadSampleBtn.disabled = true;
+      loadSampleBtn.textContent = "読み込み中...";
+      await loadSampleData();
+      render();
+    };
+  }
+
+  // events list view
+  const createEventBtn = document.getElementById("create-event");
+  if(createEventBtn){
+    createEventBtn.onclick = async ()=>{
+      const date = document.getElementById("ev-date").value;
+      const dest = document.getElementById("ev-dest").value.trim();
+      const limit = Number(document.getElementById("ev-limit").value) || 1;
+      const deadline = document.getElementById("ev-deadline").value;
+      const meetTime = document.getElementById("ev-meettime").value;
+      const notes = document.getElementById("ev-notes").value;
+      if(!dest){ alert("行き先を入力してください。"); return; }
+      if(editingEventId){
+        const ev = getEvent(editingEventId);
+        ev.date = date; ev.destination = dest; ev.parkingLimit = limit; ev.deadline = deadline;
+        ev.meetTime = meetTime; ev.notes = notes;
+        editingEventId = null;
+        await saveState();
+        render();
+      }else{
+        const ev = { id:uid(), date, destination:dest, parkingLimit:limit, deadline, meetTime, notes, responses:{}, driverResponses:{}, confirmedMerges:[] };
+        state.events.push(ev);
+        await saveState();
+        currentEventId = ev.id;
+        view = "eventDetail";
+        render();
+      }
+    };
+  }
+  const cancelEventEdit = document.getElementById("cancel-event-edit");
+  if(cancelEventEdit){
+    cancelEventEdit.onclick = ()=>{ editingEventId = null; render(); };
+  }
+  document.querySelectorAll("[data-edit-event]").forEach(b=>{
+    b.onclick = ()=>{
+      editingEventId = b.dataset.editEvent;
+      render();
+      window.scrollTo({top:0, behavior:"smooth"});
+    };
+  });
+  document.querySelectorAll("[data-del-event]").forEach(b=>{
+    b.onclick = async ()=>{
+      if(!confirm("このイベントを削除しますか？回答内容も削除されます。")) return;
+      state.events = state.events.filter(e=>e.id!==b.dataset.delEvent);
+      await saveState();
+      render();
+    };
+  });
+  document.querySelectorAll("[data-open-event]").forEach(c=>{
+    c.onclick = ()=>{
+      currentEventId = c.dataset.openEvent;
+      view = "eventDetail";
+      render();
+    };
+  });
+
+  // event detail view
+  const backBtn = document.getElementById("back-to-events");
+  if(backBtn){
+    backBtn.onclick = ()=>{ view="events"; currentEventId=null; render(); };
+  }
+  const jumpBtn = document.getElementById("jump-to-result");
+  if(jumpBtn){
+    jumpBtn.onclick = ()=>{
+      const target = document.getElementById("allocation-section");
+      if(target) target.scrollIntoView({behavior:"smooth", block:"start"});
+    };
+  }
+  const searchInput = document.getElementById("member-search");
+  if(searchInput){
+    searchInput.oninput = ()=>{
+      const q = searchInput.value.trim().toLowerCase();
+      const cards = Array.from(document.querySelectorAll("#household-list .household-card"));
+      let visibleCount = 0;
+      cards.forEach(c=>{
+        const match = !q || (c.dataset.search||"").includes(q);
+        c.style.display = match ? "" : "none";
+        if(match) visibleCount++;
+      });
+      const emptyMsg = document.getElementById("search-empty");
+      if(emptyMsg) emptyMsg.style.display = (q && visibleCount===0) ? "" : "none";
+    };
+  }
+  document.querySelectorAll("[data-resp]").forEach(b=>{
+    b.onclick = async ()=>{
+      const ev = getEvent(currentEventId);
+      const memberId = b.dataset.resp;
+      ev.responses[memberId].attending = !ev.responses[memberId].attending;
+      await saveState();
+      render();
+    };
+  });
+  document.querySelectorAll("[data-driver-toggle]").forEach(b=>{
+    b.onclick = async ()=>{
+      const ev = getEvent(currentEventId);
+      const householdId = b.dataset.driverToggle;
+      const field = b.dataset.field;
+      const dr = ev.driverResponses[householdId];
+      dr[field] = !dr[field];
+      if(field==="canDrive"){
+        if(!dr.canDrive){
+          dr.fixed = false;
+        } else if(!dr.driverName || !dr.driverName.trim()){
+          const h = state.households.find(x=>x.id===householdId);
+          const surname = h ? (h.members[0]?.name||"").split(/[\s　]+/)[0] : "";
+          dr.driverName = surname ? surname+"保護者" : "";
+        }
+      }
+      await saveState();
+      render();
+    };
+  });
+  document.querySelectorAll("[data-driver-cap]").forEach(inp=>{
+    inp.onchange = async ()=>{
+      const ev = getEvent(currentEventId);
+      ev.driverResponses[inp.dataset.driverCap].capacity = Number(inp.value)||0;
+      await saveState();
+      render();
+    };
+  });
+  document.querySelectorAll("[data-driver-name]").forEach(inp=>{
+    inp.onchange = async ()=>{
+      const ev = getEvent(currentEventId);
+      ev.driverResponses[inp.dataset.driverName].driverName = inp.value;
+      await saveState();
+      render();
+    };
+  });
+  document.querySelectorAll("[data-merge-into]").forEach(b=>{
+    b.onclick = async ()=>{
+      const ev = getEvent(currentEventId);
+      ev.confirmedMerges.push([b.dataset.mergeInto, b.dataset.mergeFrom]);
+      await saveState();
+      render();
+    };
+  });
+}
+
+function escapeHtml(s){
+  return String(s??"").replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+/* ---------------- init ---------------- */
+(async ()=>{
+  state = await loadState();
+  render();
+})();
+</script>
+</body>
+</html>
