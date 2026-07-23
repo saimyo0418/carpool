@@ -410,6 +410,8 @@ let editingHouseholdId = null;
 let editingEventId = null;
 let gradeFilter = null;
 let movingOccupantKey = null;
+let lastAllocationCars = null;
+let lastAllocationEvent = null;
 let participantsOnlyFilter = false;
 
 /* ---------------- geocoding (GSI, free, no key) ---------------- */
@@ -730,6 +732,25 @@ function renderEventDetail(){
   `;
 }
 
+function buildShareText(ev, cars){
+  const lines = [];
+  lines.push(`【${ev.destination}】${ev.date?ev.date+" ":""}`.trim());
+  if(ev.meetTime) lines.push(`現地集合時間:${ev.meetTime}`);
+  if(ev.notes) lines.push(ev.notes);
+  lines.push("");
+  cars.forEach(c=>{
+    const ownLine = c.occupants.filter(o=> o.role==='driver' || o.role==='own')
+      .map(o=> o.name + (o.role==='driver'?'(運転)':'')).join('・');
+    const others = c.occupants.filter(o=> o.role==='passenger');
+    lines.push(`■${c.label}`);
+    lines.push(`　${ownLine}`);
+    others.forEach(o=> lines.push(`　＋${o.name}`));
+    lines.push("");
+  });
+  lines.push("各自連絡を取り合って集合場所、出発時間を決定して下さい。");
+  return lines.join("\n");
+}
+
 function driverLabel(h, dr){
   if(dr.driverName && dr.driverName.trim()) return dr.driverName.trim()+"さんの車";
   const surname = (h.members[0]?.name||"").split(/[\s　]+/)[0];
@@ -856,7 +877,11 @@ function renderAllocationSection(ev){
     targetCar.occupants.push({...occ, role:"passenger", tag:"手動で移動"});
   });
 
-  html += `<div class="card"><h2>割り振り結果</h2>`;
+  lastAllocationCars = cars;
+  lastAllocationEvent = ev;
+
+  html += `<div class="card"><h2>割り振り結果</h2>
+    <button class="btn amber small" id="copy-plan-btn" style="margin-bottom:12px;">📋 今の案をコピー</button>`;
   splitWarnings.forEach(u=>{
     const h = state.households.find(hh=>hh.id===u.householdId);
     const surname = (h?.members[0]?.name||"").split(/[\s　]+/)[0] || "対象";
@@ -1204,6 +1229,32 @@ function bindEvents(){
       render();
     };
   });
+  const copyPlanBtn = document.getElementById("copy-plan-btn");
+  if(copyPlanBtn){
+    copyPlanBtn.onclick = async ()=>{
+      if(!lastAllocationCars || !lastAllocationEvent) return;
+      const text = buildShareText(lastAllocationEvent, lastAllocationCars);
+      try{
+        if(navigator.clipboard && navigator.clipboard.writeText){
+          await navigator.clipboard.writeText(text);
+        }else{
+          const ta = document.createElement("textarea");
+          ta.value = text;
+          ta.style.position = "fixed";
+          ta.style.opacity = "0";
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand("copy");
+          document.body.removeChild(ta);
+        }
+        const original = copyPlanBtn.textContent;
+        copyPlanBtn.textContent = "コピーしました！";
+        setTimeout(()=>{ copyPlanBtn.textContent = original; }, 2000);
+      }catch(e){
+        alert("コピーに失敗しました。お使いのブラウザではこの機能が使えない可能性があります。");
+      }
+    };
+  }
 }
 
 function escapeHtml(s){
