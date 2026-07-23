@@ -829,7 +829,7 @@ function renderAllocationSection(ev){
     <div class="car-card">
       <div class="car-head">
         <div class="name">${escapeHtml(c.label)} ${c.fixed?'<span class="tag">車出し必須</span>':''}</div>
-        <div class="cap">${c.occupants.length}人</div>
+        <div class="cap">${c.occupants.length}/${c.occupants.length + c.capacityRemaining}人</div>
       </div>
       ${c.occupants.map(o=>`<div class="occupant"><span>${escapeHtml(o.name)}${o.role==='driver'?'(運転)':''}</span>${o.tag?`<span class="tag">${o.tag}</span>`:''}</div>`).join("")}
     </div>
