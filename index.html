@@ -214,6 +214,13 @@
     border-color:var(--pine);
   }
   .toggle-btn.on.amber{background:var(--amber);border-color:var(--amber-deep);color:#fff;}
+  .toggle-btn:disabled{
+    background:var(--danger-bg);
+    color:var(--danger);
+    border-color:var(--danger-bg);
+    cursor:not-allowed;
+    opacity:.85;
+  }
   .cap-input{width:52px;padding:5px 4px;text-align:center;}
   #allocation-section{
     background:var(--result-bg);
@@ -664,7 +671,7 @@ function renderEventDetail(){
         <div class="row" style="flex-wrap:wrap; gap:6px;">
           <button class="toggle-btn ${dr.canDrive?'on':''}" data-driver-toggle="${h.id}" data-field="canDrive" ${dis}>この世帯から車を出す</button>
           ${dr.canDrive?`
-            <span class="sub">残り</span><input type="number" class="cap-input" min="0" value="${dr.capacity}" data-driver-cap="${h.id}" ${dis}><span class="sub">人</span>
+            <span class="sub">他家族の乗車可能数</span><input type="number" class="cap-input" min="0" value="${dr.capacity}" data-driver-cap="${h.id}" ${dis}><span class="sub">人</span>
             <button class="toggle-btn ${dr.fixed?'on amber':''}" data-driver-toggle="${h.id}" data-field="fixed" title="必ず車を出す" ${dis}>車出し必須</button>
           `:""}
         </div>
@@ -672,7 +679,7 @@ function renderEventDetail(){
           <label class="field-label" style="margin-top:8px;">運転者のお名前(任意)</label>
           <input type="text" placeholder="例:佐藤さん" value="${escapeHtml(dr.driverName)}" data-driver-name="${h.id}" ${dis}>
         `:""}
-        <label class="field-label" style="margin-top:8px;">選手以外の保護者や兄弟の人数(登録していないご家族が同乗する場合)</label>
+        <label class="field-label" style="margin-top:8px;">運転手と選手以外に同乗する人数</label>
         <select data-extra-family="${h.id}" ${dis}>
           ${Array.from({length:6},(_,i)=>i).map(n=>`<option value="${n}" ${dr.extraFamily===n?'selected':''}>${n}人</option>`).join("")}
         </select>
@@ -779,6 +786,8 @@ function renderAllocationSection(ev){
     }
 
     const nameOf = h=> driverLabel(h, ev.driverResponses[h.id]).replace("の車","").replace("さんの車","さん");
+    const headcountOf = h=> (attendingByHousehold[h.id]?.length||0) + (Number(ev.driverResponses[h.id].extraFamily)||0) + 1;
+    const capacityOf = h=> Number(ev.driverResponses[h.id].capacity)||0;
 
     html += `<div class="card"><h2>駐車場の上限を超えています</h2>
       <div class="warn-box">車を出せる世帯が ${totalCandidates}件 いますが、駐車場の上限は ${limit}台 です。あと ${neededPairs}組 まとめる必要があります。</div>
@@ -786,12 +795,16 @@ function renderAllocationSection(ev){
         const decided = ev.confirmedMerges.find(([i,f])=> (i===s.a.id&&f===s.b.id)||(i===s.b.id&&f===s.a.id));
         const aChosen = decided && decided[0]===s.a.id;
         const bChosen = decided && decided[0]===s.b.id;
+        const aHead = headcountOf(s.a), bHead = headcountOf(s.b);
+        const aCap = capacityOf(s.a), bCap = capacityOf(s.b);
+        const bIntoAFits = bHead <= aCap;
+        const aIntoBFits = aHead <= bCap;
         return `
         <div class="merge-card">
           <b>${escapeHtml(nameOf(s.a))}</b> と <b>${escapeHtml(nameOf(s.b))}</b> は住所が近いので、どちらか1台にまとめられそうです。
           <div class="toggle-group" style="margin-top:8px; flex-wrap:wrap;">
-            <button class="toggle-btn ${aChosen?'on amber':''}" data-merge-into="${s.a.id}" data-merge-from="${s.b.id}">${escapeHtml(nameOf(s.b))}を${escapeHtml(nameOf(s.a))}の車に統合</button>
-            <button class="toggle-btn ${bChosen?'on amber':''}" data-merge-into="${s.b.id}" data-merge-from="${s.a.id}">${escapeHtml(nameOf(s.a))}を${escapeHtml(nameOf(s.b))}の車に統合</button>
+            <button class="toggle-btn ${aChosen?'on amber':''}" data-merge-into="${s.a.id}" data-merge-from="${s.b.id}" ${bIntoAFits?'':'disabled'}>${escapeHtml(nameOf(s.b))}(${bHead}人)を${escapeHtml(nameOf(s.a))}の車(乗車可能${aCap}人)に統合${bIntoAFits?'':' — 人数オーバー'}</button>
+            <button class="toggle-btn ${bChosen?'on amber':''}" data-merge-into="${s.b.id}" data-merge-from="${s.a.id}" ${aIntoBFits?'':'disabled'}>${escapeHtml(nameOf(s.a))}(${aHead}人)を${escapeHtml(nameOf(s.b))}の車(乗車可能${bCap}人)に統合${aIntoBFits?'':' — 人数オーバー'}</button>
           </div>
         </div>`;
       }).join("")}
