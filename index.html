@@ -762,16 +762,16 @@ function renderAllocationSection(ev){
     return `<div class="card"><h2>割り振り</h2><div class="empty-state">車を出せる世帯がまだ登録されていません。</div></div>`;
   }
 
-  // 駐車場の上限を超えている間は、サマリーだけを示して人間の判断に委ねる
+  let html = "";
+
+  // 駐車場の上限を超えている間も、現時点の暫定的な乗り合わせ結果を下に表示し続ける
   const excess = totalCandidates - limit;
   if(excess > 0){
-    return `<div class="card"><h2>駐車場の上限を超えています</h2>
-      <div class="warn-box">車を出せる世帯が ${totalCandidates}件 あります。駐車場の上限は ${limit}台 です。話し合って、どなたか ${excess}組、車を出すのをやめてください。</div>
-      <div class="helper">車を出すのをやめる世帯は、上の「この世帯から車を出す」のチェックをオフにしてください。オフにした世帯のお子さんは、他の車の空きに自動的に割り振られます。</div>
+    html += `<div class="card"><h2>駐車場の上限を超えています</h2>
+      <div class="warn-box">車を出せる世帯が ${totalCandidates}件 あります。駐車場の上限は ${limit}台 です。どなたか ${excess}組の車が使用できません。</div>
+      <div class="helper">車を出すのをやめる世帯は、上の「この世帯から車を出す」のチェックをオフにしてください。下の結果は、現時点で車を出せる世帯をすべて使った場合の暫定的な割り振りです。</div>
     </div>`;
   }
-
-  let html = "";
 
   // 車の一覧を組み立てる(統合の概念はなし。車を出す世帯がそのまま1台になる)
   const cars = driverCandidates.map(h=>{
@@ -814,7 +814,7 @@ function renderAllocationSection(ev){
 
   if(totalPassengers > totalRemaining){
     const shortSeats = totalPassengers - totalRemaining;
-    return `<div class="card"><h2>割り振り</h2>
+    return html + `<div class="card"><h2>割り振り</h2>
       <div class="warn-box">乗客の人数が車の残り座席数を超えています。あと ${shortSeats}人分の座席(もう1台分の車)が必要です。車が揃ってから割り振りを実行してください。</div>
     </div>`;
   }
