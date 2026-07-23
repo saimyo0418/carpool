@@ -318,14 +318,6 @@
     padding:1px 7px;
     border-radius:20px;
   }
-  .merge-card{
-    border:1px solid var(--amber-deep);
-    background:#FDF3E6;
-    border-radius:10px;
-    padding:10px 12px;
-    margin-bottom:8px;
-    font-size:13.5px;
-  }
   .empty-state{
     text-align:center;
     padding:30px 10px;
@@ -650,8 +642,7 @@ function renderEventDetail(){
     h.members.forEach(m=>{
       if(!ev.responses[m.id]) ev.responses[m.id] = { attending:false };
     });
-    if(!ev.driverResponses[h.id]) ev.driverResponses[h.id] = { canDrive:false, capacity:3, fixed:false, driverName:"", extraFamily:0, parentJoinsIfMerged:true };
-    else if(ev.driverResponses[h.id].parentJoinsIfMerged===undefined) ev.driverResponses[h.id].parentJoinsIfMerged = true;
+    if(!ev.driverResponses[h.id]) ev.driverResponses[h.id] = { canDrive:false, capacity:3, fixed:false, driverName:"", extraFamily:0 };
     else if(typeof ev.driverResponses[h.id].extraFamily !== "number") ev.driverResponses[h.id].extraFamily = 0;
   });
 
@@ -688,11 +679,6 @@ function renderEventDetail(){
         ${dr.canDrive?`
           <label class="field-label" style="margin-top:8px;">運転者のお名前(任意)</label>
           <input type="text" placeholder="例:佐藤さん" value="${escapeHtml(dr.driverName)}" data-driver-name="${h.id}" ${dis}>
-          <label style="display:flex; align-items:center; gap:8px; margin-top:10px; font-size:13px; cursor:pointer;">
-            <input type="checkbox" data-parent-joins="${h.id}" ${dr.parentJoinsIfMerged!==false?'checked':''} ${dis}>
-            自分の車を出さなくてよくなった場合、保護者も他の車に同乗する
-          </label>
-          <div class="helper" style="margin-top:4px;">オフにすると、自分の車を出さなくてよくなった時にお子さんだけが他の車に乗り、保護者は当日は行かない扱いになります。</div>
         `:`
           <div class="helper" style="margin-top:8px;">車を出さなくても、お子さんの「参加」は別々に選べます。保護者の方が乗せてもらいたい場合は、下で人数を選んでください(0人のままなら、保護者は同乗しない=会場には来ない、という扱いになります)。</div>
         `}
@@ -761,7 +747,6 @@ function extraFamilyEntries(h, count){
 }
 
 function renderAllocationSection(ev){
-  ev.confirmedMerges = ev.confirmedMerges || []; // array of [intoHouseholdId, fromHouseholdId]
   ev.manualMoves = ev.manualMoves || {}; // moveKey -> targetHouseholdId
 
   const attendingByHousehold = {};
@@ -770,8 +755,6 @@ function renderAllocationSection(ev){
   });
 
   const driverCandidates = state.households.filter(h=> ev.driverResponses[h.id] && ev.driverResponses[h.id].canDrive);
-  const flexDrivers = driverCandidates.filter(h=> !ev.driverResponses[h.id].fixed);
-
   const limit = ev.parkingLimit;
   const totalCandidates = driverCandidates.length;
 
@@ -779,63 +762,19 @@ function renderAllocationSection(ev){
     return `<div class="card"><h2>割り振り</h2><div class="empty-state">車を出せる世帯がまだ登録されていません。</div></div>`;
   }
 
-  // Step 1: too many candidate drivers -> suggest merges among flexible (非必須) households
-  const neededPairs = totalCandidates - limit;
-  let html = "";
-
-  if(neededPairs > 0){
-    // build a stable, deterministic list of suggested pairs (greedy nearest, non-overlapping)
-    const pairs = [];
-    for(let i=0;i<flexDrivers.length;i++){
-      for(let j=i+1;j<flexDrivers.length;j++){
-        const a=flexDrivers[i], b=flexDrivers[j];
-        pairs.push({a,b,dist:distanceBetween(a,b)});
-      }
-    }
-    pairs.sort((x,y)=>x.dist-y.dist);
-    const used = new Set();
-    const suggestions = [];
-    for(const p of pairs){
-      if(suggestions.length>=neededPairs) break;
-      if(!used.has(p.a.id) && !used.has(p.b.id)){
-        suggestions.push(p);
-        used.add(p.a.id); used.add(p.b.id);
-      }
-    }
-
-    const nameOf = h=> driverLabel(h, ev.driverResponses[h.id]).replace("の車","").replace("さんの車","さん");
-    const headcountOf = h=> (attendingByHousehold[h.id]?.length||0) + (Number(ev.driverResponses[h.id].extraFamily)||0) + (ev.driverResponses[h.id].parentJoinsIfMerged!==false?1:0);
-    const capacityOf = h=> Number(ev.driverResponses[h.id].capacity)||0;
-
-    html += `<div class="card"><h2>駐車場の上限を超えています</h2>
-      <div class="warn-box">車を出せる世帯が ${totalCandidates}件 いますが、駐車場の上限は ${limit}台 です。あと ${neededPairs}組 まとめる必要があります。</div>
-      ${suggestions.map(s=>{
-        const decided = ev.confirmedMerges.find(([i,f])=> (i===s.a.id&&f===s.b.id)||(i===s.b.id&&f===s.a.id));
-        const aChosen = decided && decided[0]===s.a.id;
-        const bChosen = decided && decided[0]===s.b.id;
-        const aHead = headcountOf(s.a), bHead = headcountOf(s.b);
-        const aCap = capacityOf(s.a), bCap = capacityOf(s.b);
-        const bIntoAFits = bHead <= aCap;
-        const aIntoBFits = aHead <= bCap;
-        return `
-        <div class="merge-card">
-          <b>${escapeHtml(nameOf(s.a))}</b> と <b>${escapeHtml(nameOf(s.b))}</b> は住所が近いので、どちらか1台にまとめられそうです。
-          <div class="toggle-group" style="margin-top:8px; flex-wrap:wrap;">
-            <button class="toggle-btn ${aChosen?'on amber':''}" data-merge-into="${s.a.id}" data-merge-from="${s.b.id}" ${bIntoAFits?'':'disabled'}>${escapeHtml(nameOf(s.b))}(${bHead}人)を${escapeHtml(nameOf(s.a))}の車(乗車可能${aCap}人)に統合${bIntoAFits?'':' — 人数オーバー'}</button>
-            <button class="toggle-btn ${bChosen?'on amber':''}" data-merge-into="${s.b.id}" data-merge-from="${s.a.id}" ${aIntoBFits?'':'disabled'}>${escapeHtml(nameOf(s.a))}(${aHead}人)を${escapeHtml(nameOf(s.b))}の車(乗車可能${bCap}人)に統合${aIntoBFits?'':' — 人数オーバー'}</button>
-          </div>
-        </div>`;
-      }).join("")}
-      ${suggestions.length===0?'<div class="helper">これ以上、住所が近いペアが見つかりません。手動で調整してください。</div>':''}
-      <div class="helper" style="margin-top:8px;">どちらにするか話し合って決めてください。</div>
+  // 駐車場の上限を超えている間は、サマリーだけを示して人間の判断に委ねる
+  const excess = totalCandidates - limit;
+  if(excess > 0){
+    return `<div class="card"><h2>駐車場の上限を超えています</h2>
+      <div class="warn-box">車を出せる世帯が ${totalCandidates}件 あります。駐車場の上限は ${limit}台 です。話し合って、どなたか ${excess}組、車を出すのをやめてください。</div>
+      <div class="helper">車を出すのをやめる世帯は、上の「この世帯から車を出す」のチェックをオフにしてください。オフにした世帯のお子さんは、他の車の空きに自動的に割り振られます。</div>
     </div>`;
   }
 
-  // Step 2: build final cars using whichever merges are currently confirmed
-  // (households in an undecided pair are, for now, still treated as separate cars)
-  const mergedAway = new Set(ev.confirmedMerges.map(p=>p[1]));
-  const finalDriverHouseholds = driverCandidates.filter(h=> !mergedAway.has(h.id));
-  const cars = finalDriverHouseholds.map(h=>{
+  let html = "";
+
+  // 車の一覧を組み立てる(統合の概念はなし。車を出す世帯がそのまま1台になる)
+  const cars = driverCandidates.map(h=>{
     const dr = ev.driverResponses[h.id];
     const openSeats = Number(dr.capacity)||0;
     const ownChildren = attendingByHousehold[h.id]||[];
@@ -857,31 +796,8 @@ function renderAllocationSection(ev){
   const carByHousehold = {};
   cars.forEach(c=> carByHousehold[c.householdId] = c);
 
-  const mergeWarnings = [];
-  ev.confirmedMerges.forEach(([intoId, fromId])=>{
-    const targetCar = carByHousehold[intoId];
-    if(!targetCar) return;
-    const fromHousehold = state.households.find(h=>h.id===fromId);
-    const fromDr = ev.driverResponses[fromId] || {};
-    const fromChildren = attendingByHousehold[fromId]||[];
-    const fromExtra = fromHousehold ? extraFamilyEntries(fromHousehold, Number(fromDr.extraFamily)||0) : [];
-    const parentJoins = fromDr.parentJoinsIfMerged !== false;
-    const fromParentLabel = fromDr.driverName && fromDr.driverName.trim()
-      ? fromDr.driverName.trim()
-      : ((fromHousehold?.members[0]?.name||"").split(/[\s　]+/)[0] + "保護者");
-    const seatsNeeded = fromChildren.length + fromExtra.length + (parentJoins?1:0);
-    if(parentJoins) targetCar.occupants.push({name:fromParentLabel, role:"merged", tag:"統合元の世帯", moveKey:`mp:${fromId}`});
-    fromChildren.forEach(c=> targetCar.occupants.push({name:memberDisplayName(c), role:"merged", tag:"統合元の世帯", moveKey:`m:${c.id}`}));
-    fromExtra.forEach(e=> targetCar.occupants.push({name:e.name, role:"merged", tag:"統合元の世帯", moveKey:e.moveKey}));
-    targetCar.capacityRemaining -= seatsNeeded;
-    if(targetCar.capacityRemaining < 0){
-      mergeWarnings.push(targetCar.label);
-      targetCar.capacityRemaining = 0;
-    }
-  });
-
-  // remaining passengers = households that are neither driving nor merged-away
-  const placedHouseholdIds = new Set([...finalDriverHouseholds.map(h=>h.id), ...mergedAway]);
+  // 車を出さない世帯 = 乗せてもらう側
+  const placedHouseholdIds = new Set(driverCandidates.map(h=>h.id));
   const passengerUnits = state.households
     .filter(h=> !placedHouseholdIds.has(h.id))
     .map(h=>{
@@ -896,13 +812,9 @@ function renderAllocationSection(ev){
   const totalRemaining = cars.reduce((s,c)=>s+c.capacityRemaining,0);
   const totalPassengers = passengerUnits.reduce((s,u)=>s+u.members.length,0);
 
-  mergeWarnings.forEach(label=>{
-    html += `<div class="warn-box">${escapeHtml(label)}は統合された世帯の人数まで座席が足りていません。回答内容を確認してください。</div>`;
-  });
-
   if(totalPassengers > totalRemaining){
     const shortSeats = totalPassengers - totalRemaining;
-    return html + `<div class="card"><h2>割り振り</h2>
+    return `<div class="card"><h2>割り振り</h2>
       <div class="warn-box">乗客の人数が車の残り座席数を超えています。あと ${shortSeats}人分の座席(もう1台分の車)が必要です。車が揃ってから割り振りを実行してください。</div>
     </div>`;
   }
@@ -953,7 +865,7 @@ function renderAllocationSection(ev){
   html += cars.map(c=>{
     const ownLine = c.occupants.filter(o=> o.role==='driver' || o.role==='own')
       .map(o=> o.name + (o.role==='driver'?'(運転)':'')).join('・');
-    const others = c.occupants.filter(o=> o.role==='passenger' || o.role==='merged');
+    const others = c.occupants.filter(o=> o.role==='passenger');
     return `
     <div class="car-card">
       <div class="car-head">
@@ -1125,7 +1037,7 @@ function bindEvents(){
         await saveState();
         render();
       }else{
-        const ev = { id:uid(), date, destination:dest, parkingLimit:limit, deadline, meetTime, notes, responses:{}, driverResponses:{}, confirmedMerges:[] };
+        const ev = { id:uid(), date, destination:dest, parkingLimit:limit, deadline, meetTime, notes, responses:{}, driverResponses:{} };
         state.events.push(ev);
         await saveState();
         currentEventId = ev.id;
@@ -1249,31 +1161,10 @@ function bindEvents(){
       render();
     };
   });
-  document.querySelectorAll("[data-parent-joins]").forEach(cb=>{
-    cb.onchange = async ()=>{
-      const ev = getEvent(currentEventId);
-      ev.driverResponses[cb.dataset.parentJoins].parentJoinsIfMerged = cb.checked;
-      await saveState();
-      render();
-    };
-  });
   document.querySelectorAll("[data-driver-name]").forEach(inp=>{
     inp.onchange = async ()=>{
       const ev = getEvent(currentEventId);
       ev.driverResponses[inp.dataset.driverName].driverName = inp.value;
-      await saveState();
-      render();
-    };
-  });
-  document.querySelectorAll("[data-merge-into]").forEach(b=>{
-    b.onclick = async ()=>{
-      const ev = getEvent(currentEventId);
-      ev.confirmedMerges = ev.confirmedMerges || [];
-      const into = b.dataset.mergeInto, from = b.dataset.mergeFrom;
-      const existingIdx = ev.confirmedMerges.findIndex(([i,f])=> (i===into&&f===from)||(i===from&&f===into));
-      const isSameChoice = existingIdx>=0 && ev.confirmedMerges[existingIdx][0]===into && ev.confirmedMerges[existingIdx][1]===from;
-      if(existingIdx>=0) ev.confirmedMerges.splice(existingIdx,1);
-      if(!isSameChoice) ev.confirmedMerges.push([into, from]); // clicking the already-chosen option undoes it
       await saveState();
       render();
     };
