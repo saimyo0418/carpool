@@ -21,6 +21,8 @@
     --danger-bg:#FBECEA;
     --muted:#6B7268;
     --radius:12px;
+    --result-bg:#EAF1F0;
+    --result-border:#C6DBD6;
   }
   *{box-sizing:border-box;}
   body{
@@ -213,6 +215,16 @@
   }
   .toggle-btn.on.amber{background:var(--amber);border-color:var(--amber-deep);color:#fff;}
   .cap-input{width:52px;padding:5px 4px;text-align:center;}
+  #allocation-section{
+    background:var(--result-bg);
+    border:1px solid var(--result-border);
+    border-radius:var(--radius);
+    padding:14px;
+    margin-top:6px;
+  }
+  #allocation-section .card{
+    background:#fff;
+  }
   .warn-box{
     background:var(--danger-bg);
     color:var(--danger);
@@ -417,13 +429,17 @@ const SAMPLE_HOUSEHOLDS = [
 ];
 
 async function loadSampleData(){
-  const additions = SAMPLE_HOUSEHOLDS.map(h=>({
-    id: uid(),
-    address: h.address,
-    lat: null,
-    lng: null,
-    members: h.names.map(n=>({id:uid(), name:n}))
-  }));
+  const additions = [];
+  for(const h of SAMPLE_HOUSEHOLDS){
+    const geo = await geocode(h.address);
+    additions.push({
+      id: uid(),
+      address: h.address,
+      lat: geo.lat,
+      lng: geo.lng,
+      members: h.names.map(n=>({id:uid(), name:n}))
+    });
+  }
   state.households.push(...additions);
   await saveState();
 }
@@ -456,7 +472,7 @@ function renderHouseholds(){
 
   const list = state.households.map(h=>`
     <div class="household-card">
-      <div class="addr">${escapeHtml(h.address)} ${h.lat!=null?'<span class="pill">位置情報あり</span>':'<span class="pill">簡易判定</span>'}</div>
+      <div class="addr">${h.lat!=null?'<span class="pill">位置情報あり</span>':'<span class="pill">簡易判定</span>'}</div>
       <div class="members">${h.members.map(m=>escapeHtml(m.name)).join("・")}</div>
       <div style="margin-top:8px; display:flex; gap:8px;">
         <button class="btn secondary small" data-edit-household="${h.id}">編集</button>
@@ -648,15 +664,15 @@ function renderAllocationSection(ev){
   }
 
   // Step 1: too many candidate drivers -> suggest merges among flexible (非必須) households
-  const mergedAway = new Set(ev.confirmedMerges.map(p=>p[1]));
-  const stillNeeded = totalCandidates - mergedAway.size - limit;
+  const neededPairs = totalCandidates - limit;
+  let html = "";
 
-  if(stillNeeded > 0){
-    const availableFlex = flexDrivers.filter(h=> !mergedAway.has(h.id));
+  if(neededPairs > 0){
+    // build a stable, deterministic list of suggested pairs (greedy nearest, non-overlapping)
     const pairs = [];
-    for(let i=0;i<availableFlex.length;i++){
-      for(let j=i+1;j<availableFlex.length;j++){
-        const a=availableFlex[i], b=availableFlex[j];
+    for(let i=0;i<flexDrivers.length;i++){
+      for(let j=i+1;j<flexDrivers.length;j++){
+        const a=flexDrivers[i], b=flexDrivers[j];
         pairs.push({a,b,dist:distanceBetween(a,b)});
       }
     }
@@ -664,31 +680,38 @@ function renderAllocationSection(ev){
     const used = new Set();
     const suggestions = [];
     for(const p of pairs){
-      if(suggestions.length>=stillNeeded) break;
+      if(suggestions.length>=neededPairs) break;
       if(!used.has(p.a.id) && !used.has(p.b.id)){
         suggestions.push(p);
         used.add(p.a.id); used.add(p.b.id);
       }
     }
 
-    const nameA = h=> driverLabel(h, ev.driverResponses[h.id]).replace("の車","").replace("さんの車","さん");
-    return `<div class="card"><h2>駐車場の上限を超えています</h2>
-      <div class="warn-box">車を出せる世帯が ${totalCandidates - mergedAway.size}件 いますが、駐車場の上限は ${limit}台 です。あと ${stillNeeded}組 まとめる必要があります。</div>
-      ${suggestions.map(s=>`
+    const nameOf = h=> driverLabel(h, ev.driverResponses[h.id]).replace("の車","").replace("さんの車","さん");
+
+    html += `<div class="card"><h2>駐車場の上限を超えています</h2>
+      <div class="warn-box">車を出せる世帯が ${totalCandidates}件 いますが、駐車場の上限は ${limit}台 です。あと ${neededPairs}組 まとめる必要があります。</div>
+      ${suggestions.map(s=>{
+        const decided = ev.confirmedMerges.find(([i,f])=> (i===s.a.id&&f===s.b.id)||(i===s.b.id&&f===s.a.id));
+        const aChosen = decided && decided[0]===s.a.id;
+        const bChosen = decided && decided[0]===s.b.id;
+        return `
         <div class="merge-card">
-          <b>${escapeHtml(nameA(s.a))}</b> と <b>${escapeHtml(nameA(s.b))}</b> は住所が近いので、どちらか1台にまとめられそうです。
-          <div style="margin-top:8px;">
-            <button class="btn small amber" data-merge-into="${s.a.id}" data-merge-from="${s.b.id}">${escapeHtml(nameA(s.b))}を${escapeHtml(nameA(s.a))}の車に統合</button>
-            <button class="btn small ghost" data-merge-into="${s.b.id}" data-merge-from="${s.a.id}">${escapeHtml(nameA(s.a))}を${escapeHtml(nameA(s.b))}の車に統合</button>
+          <b>${escapeHtml(nameOf(s.a))}</b> と <b>${escapeHtml(nameOf(s.b))}</b> は住所が近いので、どちらか1台にまとめられそうです。
+          <div class="toggle-group" style="margin-top:8px; flex-wrap:wrap;">
+            <button class="toggle-btn ${aChosen?'on amber':''}" data-merge-into="${s.a.id}" data-merge-from="${s.b.id}">${escapeHtml(nameOf(s.b))}を${escapeHtml(nameOf(s.a))}の車に統合</button>
+            <button class="toggle-btn ${bChosen?'on amber':''}" data-merge-into="${s.b.id}" data-merge-from="${s.a.id}">${escapeHtml(nameOf(s.a))}を${escapeHtml(nameOf(s.b))}の車に統合</button>
           </div>
-        </div>
-      `).join("")}
+        </div>`;
+      }).join("")}
       ${suggestions.length===0?'<div class="helper">これ以上、住所が近いペアが見つかりません。手動で調整してください。</div>':''}
+      <div class="helper" style="margin-top:8px;">どちらにするか話し合って決めてください。</div>
     </div>`;
   }
 
-  // Step 2: build final cars
-  const finalDriverHouseholds = driverCandidates.filter(h=> !mergedAway.has(h.id));
+  // Step 2: build final cars using whichever merges are currently confirmed
+  // (households in an undecided pair are, for now, still treated as separate cars)
+  const mergedAway = new Set(ev.confirmedMerges.map(p=>p[1]));
   const cars = finalDriverHouseholds.map(h=>{
     const dr = ev.driverResponses[h.id];
     const openSeats = Number(dr.capacity)||0;
@@ -733,7 +756,6 @@ function renderAllocationSection(ev){
   const totalRemaining = cars.reduce((s,c)=>s+c.capacityRemaining,0);
   const totalPassengers = passengerUnits.reduce((s,u)=>s+u.members.length,0);
 
-  let html = "";
   mergeWarnings.forEach(label=>{
     html += `<div class="warn-box">${escapeHtml(label)}は統合された世帯の人数まで座席が足りていません。回答内容を確認してください。</div>`;
   });
@@ -1001,7 +1023,12 @@ function bindEvents(){
   document.querySelectorAll("[data-merge-into]").forEach(b=>{
     b.onclick = async ()=>{
       const ev = getEvent(currentEventId);
-      ev.confirmedMerges.push([b.dataset.mergeInto, b.dataset.mergeFrom]);
+      ev.confirmedMerges = ev.confirmedMerges || [];
+      const into = b.dataset.mergeInto, from = b.dataset.mergeFrom;
+      const existingIdx = ev.confirmedMerges.findIndex(([i,f])=> (i===into&&f===from)||(i===from&&f===into));
+      const isSameChoice = existingIdx>=0 && ev.confirmedMerges[existingIdx][0]===into && ev.confirmedMerges[existingIdx][1]===from;
+      if(existingIdx>=0) ev.confirmedMerges.splice(existingIdx,1);
+      if(!isSameChoice) ev.confirmedMerges.push([into, from]); // clicking the already-chosen option undoes it
       await saveState();
       render();
     };
