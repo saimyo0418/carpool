@@ -258,12 +258,27 @@
   .car-card .cap{font-size:12px;color:var(--muted);}
   .occupant{
     font-size:13.5px;
-    padding:5px 0;
-    border-top:1px solid var(--line);
+    padding:5px 8px;
+    margin-top:4px;
     display:flex;
     justify-content:space-between;
+    border-radius:6px;
   }
-  .occupant:first-child{border-top:none;}
+  .occupant:first-child{margin-top:0;}
+  .occupant-own{
+    background:#EEF5EF;
+  }
+  .occupant-own .tag{
+    background:#D9EBDC;
+    color:var(--pine-deep);
+  }
+  .occupant-other{
+    background:#FBF3E7;
+  }
+  .occupant-other .tag{
+    background:#F4E1C2;
+    color:var(--amber-deep);
+  }
   .tag{
     font-size:10.5px;
     background:#EEEDE3;
@@ -369,6 +384,8 @@ let view = "events"; // households | events | eventDetail
 let currentEventId = null;
 let editingHouseholdId = null;
 let editingEventId = null;
+let gradeFilter = null;
+let participantsOnlyFilter = false;
 
 /* ---------------- geocoding (GSI, free, no key) ---------------- */
 async function geocode(address){
@@ -475,7 +492,7 @@ function renderTabs(){
   ];
   tabs.innerHTML = items.map(t=>`<button class="${view.startsWith(t.id)?'active':''}" data-tab="${t.id}">${t.label}</button>`).join("");
   tabs.querySelectorAll("button").forEach(b=>{
-    b.onclick = ()=>{ view=b.dataset.tab; currentEventId=null; editingHouseholdId=null; editingEventId=null; render(); };
+    b.onclick = ()=>{ view=b.dataset.tab; currentEventId=null; editingHouseholdId=null; editingEventId=null; gradeFilter=null; participantsOnlyFilter=false; render(); };
   });
 }
 
@@ -610,6 +627,8 @@ function renderEventDetail(){
   const householdBlocks = state.households.map(h=>{
     const dr = ev.driverResponses[h.id];
     const searchText = (h.address+" "+h.members.map(m=>m.name).join(" ")).toLowerCase();
+    const gradesInHousehold = h.members.map(m=>currentGradeOf(m)).filter(g=>g!=null);
+    const hasAttending = h.members.some(m=> ev.responses[m.id] && ev.responses[m.id].attending);
     const memberRows = h.members.map(m=>{
       const r = ev.responses[m.id];
       return `
@@ -620,7 +639,7 @@ function renderEventDetail(){
     }).join("");
 
     return `
-    <div class="household-card" style="background:#fff;" data-search="${escapeHtml(searchText)}">
+    <div class="household-card" style="background:#fff;" data-search="${escapeHtml(searchText)}" data-grades="${gradesInHousehold.join(',')}" data-attending="${hasAttending}">
       <div class="addr">${escapeHtml(h.address)}</div>
       ${memberRows}
       <div style="border-top:1px solid var(--line); margin-top:8px; padding-top:8px;">
@@ -641,6 +660,10 @@ function renderEventDetail(){
 
   const allocationHtml = renderAllocationSection(ev);
 
+  const gradesPresent = Array.from(new Set(
+    state.households.flatMap(h=> h.members.map(m=>currentGradeOf(m)).filter(g=>g!=null))
+  )).sort((a,b)=>a-b);
+
   return `
     <button class="btn ghost small" id="back-to-events" style="margin-bottom:10px;">← イベント一覧に戻る</button>
     <button class="btn amber" id="jump-to-result" style="position:fixed; bottom:20px; right:20px; left:20px; max-width:520px; margin:0 auto; z-index:50; box-shadow:0 4px 14px rgba(0,0,0,.18);">乗り合わせ結果を見る ↓</button>
@@ -656,11 +679,17 @@ function renderEventDetail(){
     <div class="card">
       <h2>参加者の回答</h2>
       <div class="helper" style="margin-bottom:10px;">お子さんごとに「参加」を選んでください。車を出せる世帯は、そのご家庭のお子さん以外に、あと何人乗せられるかを入力してください(運転者ご自身の入力は不要です)。</div>
-      <input type="text" id="member-search" placeholder="名前や住所で検索(自分の世帯を探す)" style="margin-bottom:12px;">
+      <input type="text" id="member-search" placeholder="名前や住所で検索(自分の世帯を探す)" style="margin-bottom:10px;">
+      ${gradesPresent.length? `
+      <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;">
+        <button class="toggle-btn ${gradeFilter===null?'on':''}" id="grade-filter-all">すべて</button>
+        ${gradesPresent.map(g=>`<button class="toggle-btn ${gradeFilter===g?'on':''}" data-grade-filter="${g}">${circledNum(g)}</button>`).join("")}
+      </div>`:""}
+      <button class="toggle-btn ${participantsOnlyFilter?'on amber':''}" id="participants-only-toggle" style="margin-bottom:12px;">参加者のみ表示</button>
       <div id="household-list">
         ${householdBlocks || '<div class="empty-state">先に世帯登録タブでメンバーを登録してください。</div>'}
       </div>
-      <div class="helper" id="search-empty" style="display:none;">一致する世帯が見つかりません。</div>
+      <div class="helper" id="search-empty" style="display:none;">条件に一致する世帯が見つかりません。</div>
     </div>
 
     <div id="allocation-section">
@@ -752,6 +781,7 @@ function renderAllocationSection(ev){
       label: driverLabel(h, dr),
       address: h.address, lat:h.lat, lng:h.lng,
       fixed: dr.fixed,
+      declaredSeats: openSeats,
       capacityRemaining: openSeats,
       occupants: [
         {name: dr.driverName.trim()||"運転者", role:"driver"},
@@ -825,15 +855,23 @@ function renderAllocationSection(ev){
   splitWarnings.forEach(u=>{
     html += `<div class="warn-box">${escapeHtml(u.address)}の世帯が定員の都合で複数の車に分かれました。</div>`;
   });
-  html += cars.map(c=>`
+  html += cars.map(c=>{
+    const otherCount = c.occupants.filter(o=> o.role==='passenger' || o.role==='merged').length;
+    return `
     <div class="car-card">
       <div class="car-head">
         <div class="name">${escapeHtml(c.label)} ${c.fixed?'<span class="tag">車出し必須</span>':''}</div>
-        <div class="cap">${c.occupants.length}/${c.occupants.length + c.capacityRemaining}人</div>
+        <div class="cap">他世帯 ${otherCount}/${c.declaredSeats}人</div>
       </div>
-      ${c.occupants.map(o=>`<div class="occupant"><span>${escapeHtml(o.name)}${o.role==='driver'?'(運転)':''}</span>${o.tag?`<span class="tag">${o.tag}</span>`:''}</div>`).join("")}
+      ${c.occupants.map(o=>{
+        const isOwn = o.role==='driver' || o.role==='own';
+        const cls = isOwn ? 'occupant occupant-own' : 'occupant occupant-other';
+        const tag = o.tag || (isOwn ? '自分の世帯' : '他の世帯');
+        return `<div class="${cls}"><span>${escapeHtml(o.name)}${o.role==='driver'?'(運転)':''}</span><span class="tag">${tag}</span></div>`;
+      }).join("")}
     </div>
-  `).join("");
+  `;
+  }).join("");
   html += `</div>`;
   html += `<div class="info-box">各自連絡を取り合って集合場所、出発時間を決定して下さい。</div>`;
 
@@ -841,6 +879,32 @@ function renderAllocationSection(ev){
 }
 
 /* ---------------- events / handlers ---------------- */
+function applyHouseholdFilters(){
+  const searchInput = document.getElementById("member-search");
+  const q = searchInput ? searchInput.value.trim().toLowerCase() : "";
+  const cards = Array.from(document.querySelectorAll("#household-list .household-card"));
+  let visibleCount = 0;
+  cards.forEach(c=>{
+    const searchMatch = !q || (c.dataset.search||"").includes(q);
+    const grades = (c.dataset.grades||"").split(",").filter(Boolean).map(Number);
+    const gradeMatch = gradeFilter===null || grades.includes(gradeFilter);
+    const attendingMatch = !participantsOnlyFilter || c.dataset.attending==="true";
+    const visible = searchMatch && gradeMatch && attendingMatch;
+    c.style.display = visible ? "" : "none";
+    if(visible) visibleCount++;
+  });
+  const emptyMsg = document.getElementById("search-empty");
+  if(emptyMsg) emptyMsg.style.display = (visibleCount===0) ? "" : "none";
+}
+
+function updateGradeChipHighlight(){
+  const allChip = document.getElementById("grade-filter-all");
+  if(allChip) allChip.classList.toggle("on", gradeFilter===null);
+  document.querySelectorAll("[data-grade-filter]").forEach(b=>{
+    b.classList.toggle("on", gradeFilter===Number(b.dataset.gradeFilter));
+  });
+}
+
 function bindEvents(){
   // households view
   const addMemberBtn = document.getElementById("add-member-input");
@@ -980,6 +1044,8 @@ function bindEvents(){
     c.onclick = ()=>{
       currentEventId = c.dataset.openEvent;
       view = "eventDetail";
+      gradeFilter = null;
+      participantsOnlyFilter = false;
       render();
     };
   });
@@ -998,18 +1064,31 @@ function bindEvents(){
   }
   const searchInput = document.getElementById("member-search");
   if(searchInput){
-    searchInput.oninput = ()=>{
-      const q = searchInput.value.trim().toLowerCase();
-      const cards = Array.from(document.querySelectorAll("#household-list .household-card"));
-      let visibleCount = 0;
-      cards.forEach(c=>{
-        const match = !q || (c.dataset.search||"").includes(q);
-        c.style.display = match ? "" : "none";
-        if(match) visibleCount++;
-      });
-      const emptyMsg = document.getElementById("search-empty");
-      if(emptyMsg) emptyMsg.style.display = (q && visibleCount===0) ? "" : "none";
+    searchInput.oninput = applyHouseholdFilters;
+  }
+  const gradeAllChip = document.getElementById("grade-filter-all");
+  if(gradeAllChip){
+    gradeAllChip.onclick = ()=>{ gradeFilter = null; updateGradeChipHighlight(); applyHouseholdFilters(); };
+  }
+  document.querySelectorAll("[data-grade-filter]").forEach(b=>{
+    b.onclick = ()=>{
+      const g = Number(b.dataset.gradeFilter);
+      gradeFilter = (gradeFilter===g) ? null : g;
+      updateGradeChipHighlight();
+      applyHouseholdFilters();
     };
+  });
+  const participantsToggle = document.getElementById("participants-only-toggle");
+  if(participantsToggle){
+    participantsToggle.onclick = ()=>{
+      participantsOnlyFilter = !participantsOnlyFilter;
+      participantsToggle.classList.toggle("on", participantsOnlyFilter);
+      participantsToggle.classList.toggle("amber", participantsOnlyFilter);
+      applyHouseholdFilters();
+    };
+  }
+  if(document.getElementById("household-list")){
+    applyHouseholdFilters();
   }
   document.querySelectorAll("[data-resp]").forEach(b=>{
     b.onclick = async ()=>{
