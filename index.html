@@ -256,25 +256,42 @@
   }
   .car-card .car-head .name{font-weight:700;font-size:14.5px;}
   .car-card .cap{font-size:12px;color:var(--muted);}
-  .occupant{
-    font-size:13.5px;
-    padding:5px 8px;
-    margin-top:4px;
-    display:flex;
-    justify-content:space-between;
-    border-radius:6px;
-  }
-  .occupant:first-child{margin-top:0;}
   .occupant-own{
     background:#EEF5EF;
-  }
-  .occupant-own .tag{
-    background:#D9EBDC;
     color:var(--pine-deep);
+    font-size:13.5px;
+    font-weight:600;
+    padding:8px 10px;
+    border-radius:8px;
+    margin-bottom:10px;
+  }
+  .carpool-section{
+    border-top:1px solid var(--line);
+    padding-top:8px;
+  }
+  .carpool-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    font-size:12px;
+    color:var(--muted);
+    margin-bottom:6px;
+  }
+  .carpool-count{
+    font-size:14.5px;
+    font-weight:700;
+    color:var(--ink);
   }
   .occupant-other{
     background:#FBF3E7;
+    font-size:13.5px;
+    padding:6px 10px;
+    margin-top:5px;
+    display:flex;
+    justify-content:space-between;
+    border-radius:8px;
   }
+  .occupant-other:first-child{margin-top:0;}
   .occupant-other .tag{
     background:#F4E1C2;
     color:var(--amber-deep);
@@ -617,7 +634,8 @@ function renderEventDetail(){
     h.members.forEach(m=>{
       if(!ev.responses[m.id]) ev.responses[m.id] = { attending:false };
     });
-    if(!ev.driverResponses[h.id]) ev.driverResponses[h.id] = { canDrive:false, capacity:3, fixed:false, driverName:"" };
+    if(!ev.driverResponses[h.id]) ev.driverResponses[h.id] = { canDrive:false, capacity:3, fixed:false, driverName:"", extraFamily:0 };
+    else if(typeof ev.driverResponses[h.id].extraFamily !== "number") ev.driverResponses[h.id].extraFamily = 0;
   });
 
   const today = new Date().toISOString().slice(0,10);
@@ -654,6 +672,10 @@ function renderEventDetail(){
           <label class="field-label" style="margin-top:8px;">運転者のお名前(任意)</label>
           <input type="text" placeholder="例:佐藤さん" value="${escapeHtml(dr.driverName)}" data-driver-name="${h.id}" ${dis}>
         `:""}
+        <label class="field-label" style="margin-top:8px;">選手以外の保護者や兄弟の人数(登録していないご家族が同乗する場合)</label>
+        <select data-extra-family="${h.id}" ${dis}>
+          ${Array.from({length:6},(_,i)=>i).map(n=>`<option value="${n}" ${dr.extraFamily===n?'selected':''}>${n}人</option>`).join("")}
+        </select>
       </div>
     </div>`;
   }).join("");
@@ -702,6 +724,16 @@ function driverLabel(h, dr){
   if(dr.driverName && dr.driverName.trim()) return dr.driverName.trim()+"さんの車";
   const surname = (h.members[0]?.name||"").split(/[\s　]+/)[0];
   return (surname? surname+"保護者":"世帯") + "の車";
+}
+
+function extraFamilyEntries(h, count){
+  const surname = (h.members[0]?.name||"").split(/[\s　]+/)[0];
+  const base = surname ? surname+"家族" : "同乗の家族";
+  const entries = [];
+  for(let i=0;i<count;i++){
+    entries.push({name: base + (count>1?(i+1):"")});
+  }
+  return entries;
 }
 
 function renderAllocationSection(ev){
@@ -786,6 +818,7 @@ function renderAllocationSection(ev){
       occupants: [
         {name: dr.driverName.trim()||"運転者", role:"driver"},
         ...ownChildren.map(c=>({name:memberDisplayName(c), role:"own"})),
+        ...extraFamilyEntries(h, Number(dr.extraFamily)||0).map(e=>({name:e.name, role:"own"})),
       ],
     };
   });
@@ -796,10 +829,19 @@ function renderAllocationSection(ev){
   const mergeWarnings = [];
   ev.confirmedMerges.forEach(([intoId, fromId])=>{
     const targetCar = carByHousehold[intoId];
+    if(!targetCar) return;
+    const fromHousehold = state.households.find(h=>h.id===fromId);
+    const fromDr = ev.driverResponses[fromId] || {};
     const fromChildren = attendingByHousehold[fromId]||[];
-    if(!targetCar || fromChildren.length===0) return;
+    const fromExtra = fromHousehold ? extraFamilyEntries(fromHousehold, Number(fromDr.extraFamily)||0) : [];
+    const fromParentLabel = fromDr.driverName && fromDr.driverName.trim()
+      ? fromDr.driverName.trim()
+      : ((fromHousehold?.members[0]?.name||"").split(/[\s　]+/)[0] + "保護者");
+    const seatsNeeded = fromChildren.length + fromExtra.length + 1; // 統合元の運転者本人+子ども+その他の同乗者
+    targetCar.occupants.push({name:fromParentLabel, role:"merged", tag:"統合元の世帯"});
     fromChildren.forEach(c=> targetCar.occupants.push({name:memberDisplayName(c), role:"merged", tag:"統合元の世帯"}));
-    targetCar.capacityRemaining -= fromChildren.length;
+    fromExtra.forEach(e=> targetCar.occupants.push({name:e.name, role:"merged", tag:"統合元の世帯"}));
+    targetCar.capacityRemaining -= seatsNeeded;
     if(targetCar.capacityRemaining < 0){
       mergeWarnings.push(targetCar.label);
       targetCar.capacityRemaining = 0;
@@ -810,7 +852,12 @@ function renderAllocationSection(ev){
   const placedHouseholdIds = new Set([...finalDriverHouseholds.map(h=>h.id), ...mergedAway]);
   const passengerUnits = state.households
     .filter(h=> !placedHouseholdIds.has(h.id))
-    .map(h=> ({ householdId:h.id, address:h.address, lat:h.lat, lng:h.lng, members: attendingByHousehold[h.id]||[] }))
+    .map(h=>{
+      const dr = ev.driverResponses[h.id] || {};
+      const memberEntries = (attendingByHousehold[h.id]||[]).map(m=>({name:memberDisplayName(m)}));
+      memberEntries.push(...extraFamilyEntries(h, Number(dr.extraFamily)||0));
+      return { householdId:h.id, address:h.address, lat:h.lat, lng:h.lng, members: memberEntries };
+    })
     .filter(u=> u.members.length>0)
     .sort((a,b)=> b.members.length - a.members.length);
 
@@ -834,7 +881,7 @@ function renderAllocationSection(ev){
       .sort((a,b)=> distanceBetween(unit,a) - distanceBetween(unit,b));
     if(fitting.length){
       const car = fitting[0];
-      unit.members.forEach(m=> car.occupants.push({name:memberDisplayName(m), role:"passenger", tag: unit.members.length>1? "同じ世帯":null}));
+      unit.members.forEach(m=> car.occupants.push({name:m.name, role:"passenger", tag:null}));
       car.capacityRemaining -= unit.members.length;
     } else {
       const remaining = [...unit.members];
@@ -842,7 +889,7 @@ function renderAllocationSection(ev){
       for(const car of sortedCars){
         while(remaining.length && car.capacityRemaining>0){
           const m = remaining.shift();
-          car.occupants.push({name:memberDisplayName(m), role:"passenger", tag: unit.members.length>1?"同じ世帯":null});
+          car.occupants.push({name:m.name, role:"passenger", tag:null});
           car.capacityRemaining--;
         }
         if(!remaining.length) break;
@@ -856,19 +903,27 @@ function renderAllocationSection(ev){
     html += `<div class="warn-box">${escapeHtml(u.address)}の世帯が定員の都合で複数の車に分かれました。</div>`;
   });
   html += cars.map(c=>{
-    const otherCount = c.occupants.filter(o=> o.role==='passenger' || o.role==='merged').length;
+    const ownLine = c.occupants.filter(o=> o.role==='driver' || o.role==='own')
+      .map(o=> o.name + (o.role==='driver'?'(運転)':'')).join('・');
+    const others = c.occupants.filter(o=> o.role==='passenger' || o.role==='merged');
     return `
     <div class="car-card">
       <div class="car-head">
         <div class="name">${escapeHtml(c.label)} ${c.fixed?'<span class="tag">車出し必須</span>':''}</div>
-        <div class="cap">他世帯 ${otherCount}/${c.declaredSeats}人</div>
       </div>
-      ${c.occupants.map(o=>{
-        const isOwn = o.role==='driver' || o.role==='own';
-        const cls = isOwn ? 'occupant occupant-own' : 'occupant occupant-other';
-        const tag = o.tag || (isOwn ? '自分の世帯' : '他の世帯');
-        return `<div class="${cls}"><span>${escapeHtml(o.name)}${o.role==='driver'?'(運転)':''}</span><span class="tag">${tag}</span></div>`;
-      }).join("")}
+      <div class="occupant-own">${escapeHtml(ownLine)}</div>
+      <div class="carpool-section">
+        <div class="carpool-head">
+          <span>乗り合わせ</span>
+          <span class="carpool-count">${others.length}/${c.declaredSeats}人</span>
+        </div>
+        ${others.length? others.map(o=>`
+          <div class="occupant-other">
+            <span>${escapeHtml(o.name)}</span>
+            ${o.tag?`<span class="tag">${o.tag}</span>`:''}
+          </div>
+        `).join(""): '<div class="helper">まだ乗り合わせの相手がいません。</div>'}
+      </div>
     </div>
   `;
   }).join("");
@@ -1123,6 +1178,14 @@ function bindEvents(){
     inp.onchange = async ()=>{
       const ev = getEvent(currentEventId);
       ev.driverResponses[inp.dataset.driverCap].capacity = Number(inp.value)||0;
+      await saveState();
+      render();
+    };
+  });
+  document.querySelectorAll("[data-extra-family]").forEach(sel=>{
+    sel.onchange = async ()=>{
+      const ev = getEvent(currentEventId);
+      ev.driverResponses[sel.dataset.extraFamily].extraFamily = Number(sel.value)||0;
       await saveState();
       render();
     };
