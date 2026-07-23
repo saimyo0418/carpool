@@ -641,7 +641,8 @@ function renderEventDetail(){
     h.members.forEach(m=>{
       if(!ev.responses[m.id]) ev.responses[m.id] = { attending:false };
     });
-    if(!ev.driverResponses[h.id]) ev.driverResponses[h.id] = { canDrive:false, capacity:3, fixed:false, driverName:"", extraFamily:0 };
+    if(!ev.driverResponses[h.id]) ev.driverResponses[h.id] = { canDrive:false, capacity:3, fixed:false, driverName:"", extraFamily:0, parentJoinsIfMerged:true };
+    else if(ev.driverResponses[h.id].parentJoinsIfMerged===undefined) ev.driverResponses[h.id].parentJoinsIfMerged = true;
     else if(typeof ev.driverResponses[h.id].extraFamily !== "number") ev.driverResponses[h.id].extraFamily = 0;
   });
 
@@ -678,7 +679,13 @@ function renderEventDetail(){
         ${dr.canDrive?`
           <label class="field-label" style="margin-top:8px;">運転者のお名前(任意)</label>
           <input type="text" placeholder="例:佐藤さん" value="${escapeHtml(dr.driverName)}" data-driver-name="${h.id}" ${dis}>
-        `:""}
+          <div style="margin-top:8px;">
+            <button class="toggle-btn ${dr.parentJoinsIfMerged!==false?'on':''}" data-driver-toggle="${h.id}" data-field="parentJoinsIfMerged" ${dis}>自分の車を出さなくてよくなった場合、保護者も他の車に同乗する</button>
+          </div>
+          <div class="helper" style="margin-top:4px;">オフにすると、自分の車を出さなくてよくなった時にお子さんだけが他の車に乗り、保護者は今日は行かない扱いになります。</div>
+        `:`
+          <div class="helper" style="margin-top:8px;">車を出さなくても、お子さんの「参加」は別々に選べます。保護者の方が乗せてもらいたい場合は、下で人数を選んでください(0人のままなら、保護者は同乗しない=会場には来ない、という扱いになります)。</div>
+        `}
         <label class="field-label" style="margin-top:8px;">運転手と選手以外に同乗する人数</label>
         <select data-extra-family="${h.id}" ${dis}>
           ${Array.from({length:6},(_,i)=>i).map(n=>`<option value="${n}" ${dr.extraFamily===n?'selected':''}>${n}人</option>`).join("")}
@@ -786,7 +793,7 @@ function renderAllocationSection(ev){
     }
 
     const nameOf = h=> driverLabel(h, ev.driverResponses[h.id]).replace("の車","").replace("さんの車","さん");
-    const headcountOf = h=> (attendingByHousehold[h.id]?.length||0) + (Number(ev.driverResponses[h.id].extraFamily)||0) + 1;
+    const headcountOf = h=> (attendingByHousehold[h.id]?.length||0) + (Number(ev.driverResponses[h.id].extraFamily)||0) + (ev.driverResponses[h.id].parentJoinsIfMerged!==false?1:0);
     const capacityOf = h=> Number(ev.driverResponses[h.id].capacity)||0;
 
     html += `<div class="card"><h2>駐車場の上限を超えています</h2>
@@ -847,11 +854,12 @@ function renderAllocationSection(ev){
     const fromDr = ev.driverResponses[fromId] || {};
     const fromChildren = attendingByHousehold[fromId]||[];
     const fromExtra = fromHousehold ? extraFamilyEntries(fromHousehold, Number(fromDr.extraFamily)||0) : [];
+    const parentJoins = fromDr.parentJoinsIfMerged !== false;
     const fromParentLabel = fromDr.driverName && fromDr.driverName.trim()
       ? fromDr.driverName.trim()
       : ((fromHousehold?.members[0]?.name||"").split(/[\s　]+/)[0] + "保護者");
-    const seatsNeeded = fromChildren.length + fromExtra.length + 1; // 統合元の運転者本人+子ども+その他の同乗者
-    targetCar.occupants.push({name:fromParentLabel, role:"merged", tag:"統合元の世帯"});
+    const seatsNeeded = fromChildren.length + fromExtra.length + (parentJoins?1:0);
+    if(parentJoins) targetCar.occupants.push({name:fromParentLabel, role:"merged", tag:"統合元の世帯"});
     fromChildren.forEach(c=> targetCar.occupants.push({name:memberDisplayName(c), role:"merged", tag:"統合元の世帯"}));
     fromExtra.forEach(e=> targetCar.occupants.push({name:e.name, role:"merged", tag:"統合元の世帯"}));
     targetCar.capacityRemaining -= seatsNeeded;
