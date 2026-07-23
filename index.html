@@ -6,6 +6,7 @@
 <title>のりあわせ調整</title>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check-compat.js"></script>
 <style>
   :root{
     --ink:#132A1E;
@@ -307,6 +308,18 @@ let db = null;
 let stateRef = null;
 try{
   firebase.initializeApp(firebaseConfig);
+
+  // App Check(不正なアクセスをブロックする仕組み)の初期化
+  // ここに、reCAPTCHA v3で取得した「サイトキー」を貼り付けてください。
+  const RECAPTCHA_SITE_KEY = "6LfHrmAtAAAAAMTvVcQvfngdX3OyJgGJtrdRz8q_";
+  if(RECAPTCHA_SITE_KEY && !RECAPTCHA_SITE_KEY.startsWith("ここに")){
+    const appCheck = firebase.appCheck();
+    appCheck.activate(
+      new firebase.appCheck.ReCaptchaV3Provider(RECAPTCHA_SITE_KEY),
+      true
+    );
+  }
+
   db = firebase.database();
   stateRef = db.ref("carpool_app_state_v1");
 }catch(e){
