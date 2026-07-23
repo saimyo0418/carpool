@@ -414,6 +414,28 @@ function distanceBetween(h1,h2){
 /* ---------------- ids ---------------- */
 function uid(){ return Math.random().toString(36).slice(2,10); }
 
+/* ---------------- grade (学年) helpers ---------------- */
+const CIRCLED_NUMS = ['①','②','③','④','⑤','⑥','⑦','⑧','⑨','⑩','⑪','⑫','⑬','⑭','⑮','⑯','⑰','⑱','⑲','⑳'];
+function circledNum(n){ return CIRCLED_NUMS[n-1] || `(${n})`; }
+function schoolYearOf(date){
+  const m = date.getMonth()+1;
+  return m>=4 ? date.getFullYear() : date.getFullYear()-1;
+}
+// 「今、何年生か」を、保存してある基準年度(1年生になった年度)から自動計算する
+function currentGradeOf(member){
+  if(member.gradeBaseYear==null) return null;
+  const g = schoolYearOf(new Date()) - member.gradeBaseYear + 1;
+  return g<1 ? 1 : g;
+}
+// 選択された学年(今の時点での学年)から、保存用の基準年度を逆算する
+function gradeBaseYearFromCurrentGrade(currentGrade){
+  return schoolYearOf(new Date()) - currentGrade + 1;
+}
+function memberDisplayName(m){
+  const g = currentGradeOf(m);
+  return (g!=null ? circledNum(g) : "") + m.name;
+}
+
 /* ---------------- sample data (for testing) ---------------- */
 const SAMPLE_HOUSEHOLDS = [
   { address:"さいたま市大宮区北袋町1-2-3", names:["佐藤 一郎","佐藤 花子","佐藤 次郎"] },
@@ -473,7 +495,7 @@ function renderHouseholds(){
   const list = state.households.map(h=>`
     <div class="household-card">
       <div class="addr">${h.lat!=null?'<span class="pill">位置情報あり</span>':'<span class="pill">簡易判定</span>'}</div>
-      <div class="members">${h.members.map(m=>escapeHtml(m.name)).join("・")}</div>
+      <div class="members">${h.members.map(m=>escapeHtml(memberDisplayName(m))).join("・")}</div>
       <div style="margin-top:8px; display:flex; gap:8px;">
         <button class="btn secondary small" data-edit-household="${h.id}">編集</button>
         <button class="btn ghost small" data-del-household="${h.id}">削除</button>
@@ -481,9 +503,17 @@ function renderHouseholds(){
     </div>
   `).join("") || `<div class="empty-state">まだ世帯が登録されていません。<br>下のフォームから登録してください。</div>`;
 
-  const memberInputsHtml = (editing ? editing.members.map(m=>m.name) : [""]).map(name=>
-    `<div class="member-row"><input type="text" placeholder="名前(例:佐藤 花子)" value="${escapeHtml(name)}"></div>`
+  const gradeOptions = g => Array.from({length:9},(_,i)=>i+1).map(n=>
+    `<option value="${n}" ${g===n?'selected':''}>${circledNum(n)} ${n}年生</option>`
   ).join("");
+
+  const memberInputsHtml = (editing ? editing.members : [{name:"", gradeBaseYear:null}]).map(m=>{
+    const g = editing ? (currentGradeOf(m) || 1) : 1;
+    return `<div class="member-row">
+      <select style="width:auto; flex:0 0 auto;">${gradeOptions(g)}</select>
+      <input type="text" placeholder="名前(例:佐藤 花子)" value="${escapeHtml(m.name)}">
+    </div>`;
+  }).join("");
 
   return `
     <div class="card">
@@ -584,7 +614,7 @@ function renderEventDetail(){
       const r = ev.responses[m.id];
       return `
       <div class="response-row">
-        <div class="name">${escapeHtml(m.name)}</div>
+        <div class="name">${escapeHtml(memberDisplayName(m))}</div>
         <button class="toggle-btn ${r.attending?'on':''}" data-resp="${m.id}" ${dis}>参加</button>
       </div>`;
     }).join("");
@@ -712,6 +742,7 @@ function renderAllocationSection(ev){
   // Step 2: build final cars using whichever merges are currently confirmed
   // (households in an undecided pair are, for now, still treated as separate cars)
   const mergedAway = new Set(ev.confirmedMerges.map(p=>p[1]));
+  const finalDriverHouseholds = driverCandidates.filter(h=> !mergedAway.has(h.id));
   const cars = finalDriverHouseholds.map(h=>{
     const dr = ev.driverResponses[h.id];
     const openSeats = Number(dr.capacity)||0;
@@ -724,7 +755,7 @@ function renderAllocationSection(ev){
       capacityRemaining: openSeats,
       occupants: [
         {name: dr.driverName.trim()||"運転者", role:"driver"},
-        ...ownChildren.map(c=>({name:c.name, role:"own"})),
+        ...ownChildren.map(c=>({name:memberDisplayName(c), role:"own"})),
       ],
     };
   });
@@ -737,7 +768,7 @@ function renderAllocationSection(ev){
     const targetCar = carByHousehold[intoId];
     const fromChildren = attendingByHousehold[fromId]||[];
     if(!targetCar || fromChildren.length===0) return;
-    fromChildren.forEach(c=> targetCar.occupants.push({name:c.name, role:"merged", tag:"統合元の世帯"}));
+    fromChildren.forEach(c=> targetCar.occupants.push({name:memberDisplayName(c), role:"merged", tag:"統合元の世帯"}));
     targetCar.capacityRemaining -= fromChildren.length;
     if(targetCar.capacityRemaining < 0){
       mergeWarnings.push(targetCar.label);
@@ -773,7 +804,7 @@ function renderAllocationSection(ev){
       .sort((a,b)=> distanceBetween(unit,a) - distanceBetween(unit,b));
     if(fitting.length){
       const car = fitting[0];
-      unit.members.forEach(m=> car.occupants.push({name:m.name, role:"passenger", tag: unit.members.length>1? "同じ世帯":null}));
+      unit.members.forEach(m=> car.occupants.push({name:memberDisplayName(m), role:"passenger", tag: unit.members.length>1? "同じ世帯":null}));
       car.capacityRemaining -= unit.members.length;
     } else {
       const remaining = [...unit.members];
@@ -781,7 +812,7 @@ function renderAllocationSection(ev){
       for(const car of sortedCars){
         while(remaining.length && car.capacityRemaining>0){
           const m = remaining.shift();
-          car.occupants.push({name:m.name, role:"passenger", tag: unit.members.length>1?"同じ世帯":null});
+          car.occupants.push({name:memberDisplayName(m), role:"passenger", tag: unit.members.length>1?"同じ世帯":null});
           car.capacityRemaining--;
         }
         if(!remaining.length) break;
@@ -818,7 +849,8 @@ function bindEvents(){
       const wrap = document.getElementById("member-inputs");
       const row = document.createElement("div");
       row.className = "member-row";
-      row.innerHTML = `<input type="text" placeholder="名前">`;
+      const gradeOpts = Array.from({length:9},(_,i)=>i+1).map(n=>`<option value="${n}">${circledNum(n)} ${n}年生</option>`).join("");
+      row.innerHTML = `<select style="width:auto; flex:0 0 auto;">${gradeOpts}</select><input type="text" placeholder="名前">`;
       wrap.appendChild(row);
     };
   }
@@ -826,9 +858,12 @@ function bindEvents(){
   if(saveHouseholdBtn){
     saveHouseholdBtn.onclick = async ()=>{
       const address = document.getElementById("new-address").value.trim();
-      const nameInputs = Array.from(document.querySelectorAll("#member-inputs input"));
-      const names = nameInputs.map(i=>i.value.trim()).filter(Boolean);
-      if(!address || names.length===0){
+      const rows = Array.from(document.querySelectorAll("#member-inputs .member-row"));
+      const entries = rows.map(row=>({
+        name: row.querySelector("input").value.trim(),
+        grade: Number(row.querySelector("select").value)||1,
+      })).filter(e=>e.name);
+      if(!address || entries.length===0){
         alert("住所と、少なくとも1人の名前を入力してください。");
         return;
       }
@@ -843,17 +878,18 @@ function bindEvents(){
         }
         if(editing){
           const usedOld = new Set();
-          const newMembers = names.map(n=>{
-            const match = editing.members.find(m=> m.name===n && !usedOld.has(m.id));
-            if(match){ usedOld.add(match.id); return {id:match.id, name:n}; }
-            return {id:uid(), name:n};
+          const newMembers = entries.map(e=>{
+            const match = editing.members.find(m=> m.name===e.name && !usedOld.has(m.id));
+            const gradeBaseYear = gradeBaseYearFromCurrentGrade(e.grade);
+            if(match){ usedOld.add(match.id); return {id:match.id, name:e.name, gradeBaseYear}; }
+            return {id:uid(), name:e.name, gradeBaseYear};
           });
           editing.address = address;
           editing.lat = lat;
           editing.lng = lng;
           editing.members = newMembers;
         }else{
-          state.households.push({ id: uid(), address, lat, lng, members: names.map(n=>({id:uid(), name:n})) });
+          state.households.push({ id: uid(), address, lat, lng, members: entries.map(e=>({id:uid(), name:e.name, gradeBaseYear:gradeBaseYearFromCurrentGrade(e.grade)})) });
         }
         editingHouseholdId = null;
         await saveState();
