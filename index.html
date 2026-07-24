@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>のりあわせ調整</title>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
@@ -684,13 +687,13 @@ function renderEventDetail(){
           `:""}
         </div>
         ${dr.canDrive?`
-          <label class="field-label" style="margin-top:8px;">運転者のお名前(任意)</label>
+          <label class="field-label" style="margin-top:8px;">運転手のお名前(任意)</label>
           <input type="text" placeholder="例:佐藤さん" value="${escapeHtml(dr.driverName)}" data-driver-name="${h.id}" ${dis}>
           <label style="display:flex; align-items:center; gap:8px; margin-top:10px; font-size:13px; cursor:pointer;">
             <input type="checkbox" data-attends-if-not-driving="${h.id}" ${dr.attendsIfNotDriving!==false?'checked':''} ${dis}>
-            もし車を出す必要がなくなった場合も、保護者は会場に行く
+            もし車を出す必要がなくなった場合も、運転手は会場に行く
           </label>
-          <div class="helper" style="margin-top:4px;">オフにすると、車を出さなくてよくなった時に保護者は当日は行かない扱いになります。</div>
+          <div class="helper" style="margin-top:4px;">オフにすると、車を出さなくてよくなった時に運転手は当日は行かない扱いになります。</div>
         `:`
           <div class="helper" style="margin-top:8px;">車を出さなくても、お子さんの「参加」は別々に選べます。保護者の方が乗せてもらいたい場合は、下で人数を選んでください(0人のままなら、保護者は同乗しない=会場には来ない、という扱いになります)。</div>
         `}
@@ -722,7 +725,7 @@ function renderEventDetail(){
 
     <div class="card">
       <h2>参加者の回答</h2>
-      <div class="helper" style="margin-bottom:10px;">お子さんごとに「参加」を選んでください。車を出せる世帯は、そのご家庭のお子さん以外に、あと何人乗せられるかを入力してください(運転者ご自身の入力は不要です)。</div>
+      <div class="helper" style="margin-bottom:10px;">お子さんごとに「参加」を選んでください。車を出せる世帯は、そのご家庭のお子さん以外に、あと何人乗せられるかを入力してください(運転手ご自身の入力は不要です)。</div>
       <input type="text" id="member-search" placeholder="名前や住所で検索(自分の世帯を探す)" style="margin-bottom:10px;">
       ${gradesPresent.length? `
       <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;">
@@ -764,13 +767,13 @@ function buildShareText(ev, cars){
 function driverLabel(h, dr){
   if(dr.driverName && dr.driverName.trim()) return dr.driverName.trim()+"さんの車";
   const surname = (h.members[0]?.name||"").split(/[\s　]+/)[0];
-  return (surname? surname+"保護者":"世帯") + "の車";
+  return (surname? surname+"運転手":"世帯") + "の車";
 }
 
 function driverAsPassengerEntry(h, dr){
   let surname = (dr && dr.driverName && dr.driverName.trim()) ? dr.driverName.trim() : (h.members[0]?.name||"").split(/[\s　]+/)[0];
   surname = surname.replace(/さん$/,"");
-  return { name: (surname?surname+"保護者":"保護者"), moveKey:`dp:${h.id}` };
+  return { name: (surname?surname+"運転手":"運転手"), moveKey:`dp:${h.id}` };
 }
 
 function extraFamilyEntries(h, count){
@@ -823,7 +826,7 @@ function renderAllocationSection(ev){
       declaredSeats: openSeats,
       capacityRemaining: openSeats,
       occupants: [
-        {name: dr.driverName.trim()||"運転者", role:"driver", moveKey: dr.attendsIfNotDriving!==false ? `d:${h.id}` : undefined},
+        {name: dr.driverName.trim()||"運転手", role:"driver", moveKey: dr.attendsIfNotDriving!==false ? `d:${h.id}` : undefined},
         ...ownChildren.map(c=>({name:memberDisplayName(c), role:"own", moveKey:`m:${c.id}`})),
         ...extraFamilyEntries(h, Number(dr.extraFamily)||0).map(e=>({name:e.name, role:"own", moveKey:e.moveKey})),
       ],
@@ -1231,7 +1234,7 @@ function bindEvents(){
         } else if(!dr.driverName || !dr.driverName.trim()){
           const h = state.households.find(x=>x.id===householdId);
           const surname = h ? (h.members[0]?.name||"").split(/[\s　]+/)[0] : "";
-          dr.driverName = surname ? surname+"保護者" : "";
+          dr.driverName = surname ? surname+"運転手" : "";
         }
       }
       await saveState();
@@ -1355,7 +1358,7 @@ function bindEvents(){
 
       if(!parentComes){
         // 運転しないなら会場に行かない、と回答済みの人 → そのまま車の枠を消す
-        if(!confirm("この世帯は今回、車を出すのをやめますか？(保護者は当日は行かない扱いになります)")) return;
+        if(!confirm("この世帯は今回、車を出すのをやめますか？(運転手は当日は行かない扱いになります)")) return;
         dr.canDrive = false;
         await saveState();
         render();
