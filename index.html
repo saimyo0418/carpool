@@ -260,6 +260,8 @@
     justify-content:space-between;
     align-items:center;
     margin-bottom:8px;
+    flex-wrap:wrap;
+    gap:6px;
   }
   .car-card .car-head .name{font-weight:700;font-size:14.5px;}
   .car-card .cap{font-size:12px;color:var(--muted);}
@@ -412,6 +414,7 @@ let gradeFilter = null;
 let movingOccupantKey = null;
 let lastAllocationCars = null;
 let lastAllocationEvent = null;
+let stopDrivingPendingHousehold = null;
 let participantsOnlyFilter = false;
 
 /* ---------------- geocoding (GSI, free, no key) ---------------- */
@@ -519,7 +522,7 @@ function renderTabs(){
   ];
   tabs.innerHTML = items.map(t=>`<button class="${view.startsWith(t.id)?'active':''}" data-tab="${t.id}">${t.label}</button>`).join("");
   tabs.querySelectorAll("button").forEach(b=>{
-    b.onclick = ()=>{ view=b.dataset.tab; currentEventId=null; editingHouseholdId=null; editingEventId=null; gradeFilter=null; participantsOnlyFilter=false; movingOccupantKey=null; render(); };
+    b.onclick = ()=>{ view=b.dataset.tab; currentEventId=null; editingHouseholdId=null; editingEventId=null; gradeFilter=null; participantsOnlyFilter=false; movingOccupantKey=null; stopDrivingPendingHousehold=null; render(); };
   });
 }
 
@@ -644,7 +647,9 @@ function renderEventDetail(){
     h.members.forEach(m=>{
       if(!ev.responses[m.id]) ev.responses[m.id] = { attending:false };
     });
-    if(!ev.driverResponses[h.id]) ev.driverResponses[h.id] = { canDrive:false, capacity:3, fixed:false, driverName:"", extraFamily:0 };
+    if(!ev.driverResponses[h.id]) ev.driverResponses[h.id] = { canDrive:false, capacity:3, fixed:false, driverName:"", extraFamily:0, attendsIfNotDriving:true, driverNeedsRide:false };
+    else if(ev.driverResponses[h.id].driverNeedsRide===undefined) ev.driverResponses[h.id].driverNeedsRide = false;
+    else if(ev.driverResponses[h.id].attendsIfNotDriving===undefined) ev.driverResponses[h.id].attendsIfNotDriving = true;
     else if(typeof ev.driverResponses[h.id].extraFamily !== "number") ev.driverResponses[h.id].extraFamily = 0;
   });
 
@@ -681,6 +686,11 @@ function renderEventDetail(){
         ${dr.canDrive?`
           <label class="field-label" style="margin-top:8px;">運転者のお名前(任意)</label>
           <input type="text" placeholder="例:佐藤さん" value="${escapeHtml(dr.driverName)}" data-driver-name="${h.id}" ${dis}>
+          <label style="display:flex; align-items:center; gap:8px; margin-top:10px; font-size:13px; cursor:pointer;">
+            <input type="checkbox" data-attends-if-not-driving="${h.id}" ${dr.attendsIfNotDriving!==false?'checked':''} ${dis}>
+            もし車を出す必要がなくなった場合も、保護者は会場に行く
+          </label>
+          <div class="helper" style="margin-top:4px;">オフにすると、車を出さなくてよくなった時に保護者は当日は行かない扱いになります。</div>
         `:`
           <div class="helper" style="margin-top:8px;">車を出さなくても、お子さんの「参加」は別々に選べます。保護者の方が乗せてもらいたい場合は、下で人数を選んでください(0人のままなら、保護者は同乗しない=会場には来ない、という扱いになります)。</div>
         `}
@@ -757,6 +767,12 @@ function driverLabel(h, dr){
   return (surname? surname+"保護者":"世帯") + "の車";
 }
 
+function driverAsPassengerEntry(h, dr){
+  let surname = (dr && dr.driverName && dr.driverName.trim()) ? dr.driverName.trim() : (h.members[0]?.name||"").split(/[\s　]+/)[0];
+  surname = surname.replace(/さん$/,"");
+  return { name: (surname?surname+"保護者":"保護者"), moveKey:`dp:${h.id}` };
+}
+
 function extraFamilyEntries(h, count){
   const surname = (h.members[0]?.name||"").split(/[\s　]+/)[0];
   const base = surname ? surname+"家族" : "同乗の家族";
@@ -825,6 +841,7 @@ function renderAllocationSection(ev){
       const dr = ev.driverResponses[h.id] || {};
       const memberEntries = (attendingByHousehold[h.id]||[]).map(m=>({name:memberDisplayName(m), moveKey:`m:${m.id}`}));
       memberEntries.push(...extraFamilyEntries(h, Number(dr.extraFamily)||0));
+      if(dr.driverNeedsRide) memberEntries.push(driverAsPassengerEntry(h, dr));
       return { householdId:h.id, address:h.address, lat:h.lat, lng:h.lng, members: memberEntries };
     })
     .filter(u=> u.members.length>0)
@@ -945,11 +962,22 @@ function renderAllocationSection(ev){
       return rows + groupBtn + groupPicker;
     }).join("");
 
+    const driverStillHere = c.occupants.some(o=>o.role==='driver');
+    const stopPending = stopDrivingPendingHousehold===c.householdId;
+    const stopPickerCars = cars.filter(cc=>cc.householdId!==c.householdId);
+
     return `
     <div class="car-card">
       <div class="car-head">
         <div class="name">${escapeHtml(c.label)} ${c.fixed?'<span class="tag">車出し必須</span>':''}</div>
+        <button class="btn ghost small" data-stop-driving="${c.householdId}" data-others-count="${others.length}" data-driver-present="${driverStillHere}">この車を出すのをやめる</button>
       </div>
+      ${stopPending?`
+      <div class="move-picker">
+        <div class="helper" style="margin-bottom:6px;">運転手はどこに振り分けますか？</div>
+        ${stopPickerCars.map(cc=>`<button class="btn secondary small" data-stop-driving-target="${cc.householdId}" data-stop-driving-source="${c.householdId}" style="margin:0 6px 6px 0;">${escapeHtml(cc.label)}</button>`).join("")}
+        <button class="btn ghost small" data-stop-driving-cancel="1">キャンセル</button>
+      </div>`:''}
       <div class="occupant-own">${ownHtml}</div>
       <div class="carpool-section">
         <div class="carpool-head">
@@ -1136,6 +1164,7 @@ function bindEvents(){
       gradeFilter = null;
       participantsOnlyFilter = false;
       movingOccupantKey = null;
+      stopDrivingPendingHousehold = null;
       render();
     };
   });
@@ -1225,6 +1254,14 @@ function bindEvents(){
       render();
     };
   });
+  document.querySelectorAll("[data-attends-if-not-driving]").forEach(cb=>{
+    cb.onchange = async ()=>{
+      const ev = getEvent(currentEventId);
+      ev.driverResponses[cb.dataset.attendsIfNotDriving].attendsIfNotDriving = cb.checked;
+      await saveState();
+      render();
+    };
+  });
   document.querySelectorAll("[data-driver-name]").forEach(inp=>{
     inp.onchange = async ()=>{
       const ev = getEvent(currentEventId);
@@ -1294,6 +1331,63 @@ function bindEvents(){
       }
     };
   }
+  document.querySelectorAll("[data-stop-driving]").forEach(b=>{
+    b.onclick = async ()=>{
+      const othersCount = Number(b.dataset.othersCount)||0;
+      if(othersCount > 0){
+        alert("まだ人が乗っています。他の世帯の車に移動してから操作してください。");
+        return;
+      }
+      const ev = getEvent(currentEventId);
+      const householdId = b.dataset.stopDriving;
+      const dr = ev.driverResponses[householdId];
+      const driverPresent = b.dataset.driverPresent === "true";
+      const parentComes = dr.attendsIfNotDriving !== false;
+
+      if(!driverPresent){
+        // 運転手はすでに手動で別の車に移動済み。二重にカウントしないよう、そのまま車をやめる
+        if(!confirm("この世帯は今回、車を出すのをやめますか？")) return;
+        dr.canDrive = false;
+        await saveState();
+        render();
+        return;
+      }
+
+      if(!parentComes){
+        // 運転しないなら会場に行かない、と回答済みの人 → そのまま車の枠を消す
+        if(!confirm("この世帯は今回、車を出すのをやめますか？(保護者は当日は行かない扱いになります)")) return;
+        dr.canDrive = false;
+        await saveState();
+        render();
+        return;
+      }
+
+      // 運転手が残っていて、かつ「行く」と回答している → 振り分け先を選んでもらう
+      stopDrivingPendingHousehold = householdId;
+      render();
+    };
+  });
+  document.querySelectorAll("[data-stop-driving-target]").forEach(b=>{
+    b.onclick = async ()=>{
+      const ev = getEvent(currentEventId);
+      const sourceId = b.dataset.stopDrivingSource;
+      const targetId = b.dataset.stopDrivingTarget;
+      const dr = ev.driverResponses[sourceId];
+      dr.canDrive = false;
+      dr.driverNeedsRide = true;
+      ev.manualMoves = ev.manualMoves || {};
+      ev.manualMoves[`dp:${sourceId}`] = targetId;
+      stopDrivingPendingHousehold = null;
+      await saveState();
+      render();
+    };
+  });
+  document.querySelectorAll("[data-stop-driving-cancel]").forEach(b=>{
+    b.onclick = ()=>{
+      stopDrivingPendingHousehold = null;
+      render();
+    };
+  });
 }
 
 function escapeHtml(s){
