@@ -823,7 +823,7 @@ function renderAllocationSection(ev){
       declaredSeats: openSeats,
       capacityRemaining: openSeats,
       occupants: [
-        {name: dr.driverName.trim()||"運転者", role:"driver", moveKey:`d:${h.id}`},
+        {name: dr.driverName.trim()||"運転者", role:"driver", moveKey: dr.attendsIfNotDriving!==false ? `d:${h.id}` : undefined},
         ...ownChildren.map(c=>({name:memberDisplayName(c), role:"own", moveKey:`m:${c.id}`})),
         ...extraFamilyEntries(h, Number(dr.extraFamily)||0).map(e=>({name:e.name, role:"own", moveKey:e.moveKey})),
       ],
