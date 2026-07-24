@@ -807,7 +807,7 @@ function renderAllocationSection(ev){
       declaredSeats: openSeats,
       capacityRemaining: openSeats,
       occupants: [
-        {name: dr.driverName.trim()||"運転者", role:"driver"},
+        {name: dr.driverName.trim()||"運転者", role:"driver", moveKey:`d:${h.id}`},
         ...ownChildren.map(c=>({name:memberDisplayName(c), role:"own", moveKey:`m:${c.id}`})),
         ...extraFamilyEntries(h, Number(dr.extraFamily)||0).map(e=>({name:e.name, role:"own", moveKey:e.moveKey})),
       ],
@@ -846,7 +846,7 @@ function renderAllocationSection(ev){
       .sort((a,b)=> distanceBetween(unit,a) - distanceBetween(unit,b));
     if(fitting.length){
       const car = fitting[0];
-      unit.members.forEach(m=> car.occupants.push({name:m.name, role:"passenger", tag:null, moveKey:m.moveKey}));
+      unit.members.forEach(m=> car.occupants.push({name:m.name, role:"passenger", tag:null, moveKey:m.moveKey, origin:unit.householdId}));
       car.capacityRemaining -= unit.members.length;
     } else {
       const remaining = [...unit.members];
@@ -854,7 +854,7 @@ function renderAllocationSection(ev){
       for(const car of sortedCars){
         while(remaining.length && car.capacityRemaining>0){
           const m = remaining.shift();
-          car.occupants.push({name:m.name, role:"passenger", tag:null, moveKey:m.moveKey});
+          car.occupants.push({name:m.name, role:"passenger", tag:null, moveKey:m.moveKey, origin:unit.householdId});
           car.capacityRemaining--;
         }
         if(!remaining.length) break;
@@ -888,36 +888,75 @@ function renderAllocationSection(ev){
     html += `<div class="warn-box">${escapeHtml(surname)}さんの世帯が定員の都合で複数の車に分かれました。</div>`;
   });
   html += cars.map(c=>{
-    const ownLine = c.occupants.filter(o=> o.role==='driver' || o.role==='own')
-      .map(o=> o.name + (o.role==='driver'?'(運転)':'')).join('・');
+    const ownEntries = c.occupants.filter(o=> o.role==='driver' || o.role==='own');
     const others = c.occupants.filter(o=> o.role==='passenger');
-    return `
-    <div class="car-card">
-      <div class="car-head">
-        <div class="name">${escapeHtml(c.label)} ${c.fixed?'<span class="tag">車出し必須</span>':''}</div>
-      </div>
-      <div class="occupant-own">${escapeHtml(ownLine)}</div>
-      <div class="carpool-section">
-        <div class="carpool-head">
-          <span>乗り合わせ</span>
-          <span class="carpool-count">${others.length}/${c.declaredSeats}人</span>
-        </div>
-        ${others.length? others.map(o=>{
-          const isOpen = o.moveKey && movingOccupantKey===o.moveKey;
-          const otherCars = cars.filter(cc=>cc.householdId!==c.householdId);
-          return `
-          <div class="occupant-other" ${o.moveKey?`data-move-occupant="${o.moveKey}"`:''} style="${o.moveKey?'cursor:pointer;':''}">
-            <span>${escapeHtml(o.name)}</span>
-            ${o.tag?`<span class="tag">${o.tag}</span>`:''}
-          </div>
-          ${isOpen?`
+    const otherCars = cars.filter(cc=>cc.householdId!==c.householdId);
+
+    const ownHtml = ownEntries.map(o=>{
+      const isOpen = o.moveKey && movingOccupantKey===o.moveKey;
+      const label = escapeHtml(o.name) + (o.role==='driver'?'(運転)':'');
+      const chip = `<span ${o.moveKey?`data-move-occupant="${o.moveKey}"`:''} style="${o.moveKey?'cursor:pointer; border-bottom:1px dotted var(--pine-deep);':''}">${label}</span>`;
+      const picker = isOpen?`
+        <div class="move-picker">
+          <div class="helper" style="margin-bottom:6px;">どの車に移動しますか？</div>
+          ${otherCars.map(cc=>`<button class="btn secondary small" data-move-target="${cc.householdId}" data-move-key="${o.moveKey}" style="margin:0 6px 6px 0;">${escapeHtml(cc.label)}</button>`).join("")}
+          ${ev.manualMoves[o.moveKey]?`<button class="btn ghost small" data-move-reset="${o.moveKey}" style="margin:0 6px 6px 0;">自動に戻す</button>`:''}
+          <button class="btn ghost small" data-move-cancel="1">閉じる</button>
+        </div>`:'';
+      return chip + picker;
+    }).join(' <span style="opacity:.5;">・</span> ');
+
+    // 他世帯の乗客は、同じ世帯出身ごとにグループ化する(まとめて移動できるように)
+    const groups = [];
+    const seenOrigins = new Set();
+    others.forEach(o=>{
+      const originKey = o.origin || o.moveKey;
+      if(seenOrigins.has(originKey)) return;
+      seenOrigins.add(originKey);
+      groups.push(others.filter(x=> (x.origin||x.moveKey)===originKey));
+    });
+
+    const othersHtml = groups.map(group=>{
+      const groupCsv = group.map(o=>o.moveKey).join(',');
+      const groupOpen = group.length>1 && movingOccupantKey===groupCsv;
+      const rows = group.map(o=>{
+        const isOpen = movingOccupantKey===o.moveKey;
+        const picker = isOpen?`
           <div class="move-picker">
             <div class="helper" style="margin-bottom:6px;">どの車に移動しますか？</div>
             ${otherCars.map(cc=>`<button class="btn secondary small" data-move-target="${cc.householdId}" data-move-key="${o.moveKey}" style="margin:0 6px 6px 0;">${escapeHtml(cc.label)}</button>`).join("")}
             ${ev.manualMoves[o.moveKey]?`<button class="btn ghost small" data-move-reset="${o.moveKey}" style="margin:0 6px 6px 0;">自動に戻す</button>`:''}
             <button class="btn ghost small" data-move-cancel="1">閉じる</button>
-          </div>`:''}
-        `;}).join(""): '<div class="helper">まだ乗り合わせの相手がいません。</div>'}
+          </div>`:'';
+        return `
+          <div class="occupant-other" data-move-occupant="${o.moveKey}" style="cursor:pointer;">
+            <span>${escapeHtml(o.name)}</span>
+            ${o.tag?`<span class="tag">${o.tag}</span>`:''}
+          </div>
+          ${picker}`;
+      }).join("");
+      const groupPicker = groupOpen?`
+        <div class="move-picker">
+          <div class="helper" style="margin-bottom:6px;">${group.length}人まとめて、どの車に移動しますか？</div>
+          ${otherCars.map(cc=>`<button class="btn secondary small" data-move-target="${cc.householdId}" data-move-key="${groupCsv}" style="margin:0 6px 6px 0;">${escapeHtml(cc.label)}</button>`).join("")}
+          <button class="btn ghost small" data-move-cancel="1">閉じる</button>
+        </div>`:'';
+      const groupBtn = group.length>1?`<button class="btn ghost small" data-move-occupant="${groupCsv}" style="margin:2px 0 6px;">この${group.length}人をまとめて移動</button>`:'';
+      return rows + groupBtn + groupPicker;
+    }).join("");
+
+    return `
+    <div class="car-card">
+      <div class="car-head">
+        <div class="name">${escapeHtml(c.label)} ${c.fixed?'<span class="tag">車出し必須</span>':''}</div>
+      </div>
+      <div class="occupant-own">${ownHtml}</div>
+      <div class="carpool-section">
+        <div class="carpool-head">
+          <span>乗り合わせ</span>
+          <span class="carpool-count">${others.length}/${c.declaredSeats}人</span>
+        </div>
+        ${others.length? othersHtml : '<div class="helper">まだ乗り合わせの相手がいません。</div>'}
       </div>
     </div>
   `;
@@ -1206,7 +1245,7 @@ function bindEvents(){
       e.stopPropagation();
       const ev = getEvent(currentEventId);
       ev.manualMoves = ev.manualMoves || {};
-      ev.manualMoves[b.dataset.moveKey] = b.dataset.moveTarget;
+      b.dataset.moveKey.split(",").forEach(k=>{ ev.manualMoves[k] = b.dataset.moveTarget; });
       movingOccupantKey = null;
       await saveState();
       render();
