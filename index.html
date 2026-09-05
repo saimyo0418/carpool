@@ -697,7 +697,7 @@ function renderEventDetail(){
         `:`
           <div class="helper" style="margin-top:8px;">車を出さなくても、お子さんの「参加」は別々に選べます。保護者の方が乗せてもらいたい場合は、下で人数を選んでください(0人のままなら、保護者は同乗しない=会場には来ない、という扱いになります)。</div>
         `}
-        <label class="field-label" style="margin-top:8px;">運転手と選手以外に同乗する人数</label>
+        <label class="field-label" style="margin-top:8px;">運転手と選手以外で会場に行く人数(兄妹や家族等)</label>
         <select data-extra-family="${h.id}" ${dis}>
           ${Array.from({length:6},(_,i)=>i).map(n=>`<option value="${n}" ${dr.extraFamily===n?'selected':''}>${n}人</option>`).join("")}
         </select>
